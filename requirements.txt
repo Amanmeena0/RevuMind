@@ -1,23 +1,28 @@
+# Data Manipulation & Analysis
 pandas
-bs4
-requests
+numpy
+scipy
 
-pip install nltk scikit-learn pandas numpy
-pip install requests beautifulsoup4 pandas pyarrow lxml
-pip install seaborn matplotlib nltk pandas numpy
-pip install opencv-python numpy pandas matplotlib requests pytorch torchvision
-pip install tensorflow pandas numpy matplotlib scikit-learn seaborn
+# Machine Learning & Modeling
+scikit-learn
+torch
+torchvision
+shap
 
+# Natural Language Processing
+nltk
+spacy
+beautifulsoup4
 
-Python
-Pandas / NumPy
-NLTK / spaCy
-TF-IDF
-OpenCV
+# Computer Vision
+opencv-python
 Pillow
-PyTorch
-TensorFlow / Keras
-Scikit-learn
-SHAP
-Plotly / Streamlit
-Seaborn / Matplotlib
+
+# Data Visualization
+matplotlib
+seaborn
+plotly
+streamlit
+
+# Utilities
+requests
