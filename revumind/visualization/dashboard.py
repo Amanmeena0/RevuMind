@@ -34,12 +34,14 @@ st.set_page_config(
     initial_sidebar_state = "expanded",
 )
 
+from revumind.utils.constants import PALETTE
+
 # ── Design tokens ─────────────────────────────────────────────────────────────
-C_POS    = "#5DCAA5"   # teal  — positive sentiment
-C_NEG    = "#D85A30"   # coral — negative / defect
-C_NEU    = "#EF9F27"   # amber — neutral / warning
-C_BLU    = "#378ADD"   # blue  — informational
-C_PRP    = "#7F77DD"   # purple
+C_POS    = PALETTE[0]   # teal  — positive sentiment
+C_NEG    = PALETTE[1]   # coral — negative / defect
+C_NEU    = PALETTE[2]   # amber — neutral / warning
+C_PRP    = PALETTE[3]   # purple
+C_BLU    = PALETTE[4]   # blue  — informational
 C_BG     = "#0F1117"   # dark background
 C_CARD   = "#1A1D27"   # card background
 C_BORDER = "#2A2D3A"   # subtle border

@@ -44,53 +44,12 @@ import matplotlib.gridspec as gridspec
 import seaborn as sns
 from collections import Counter
 
+from revumind.utils.constants import PALETTE, configure_plotting
+
 warnings.filterwarnings("ignore")
 np.random.seed(42)
 
-# ── Scikit-learn ──────────────────────────────────────────────────────────────
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.decomposition import TruncatedSVD
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-from sklearn.svm import LinearSVC
-from sklearn.naive_bayes import MultinomialNB
-from sklearn.calibration import CalibratedClassifierCV
-from sklearn.pipeline import Pipeline
-from sklearn.model_selection import (
-    GridSearchCV, RandomizedSearchCV,
-    StratifiedKFold, cross_val_score, cross_validate,
-    learning_curve,
-)
-from sklearn.metrics import (
-    classification_report, confusion_matrix,
-    f1_score, accuracy_score, balanced_accuracy_score,
-    precision_recall_curve, roc_auc_score,
-    average_precision_score, make_scorer,
-)
-from sklearn.preprocessing import StandardScaler, label_binarize
-from sklearn.utils.class_weight import compute_class_weight
-from scipy.stats import loguniform, uniform, randint
-
-# ── imbalanced-learn ──────────────────────────────────────────────────────────
-try:
-    from imblearn.over_sampling import SMOTE, ADASYN, RandomOverSampler
-    from imblearn.under_sampling import RandomUnderSampler, TomekLinks
-    from imblearn.combine import SMOTETomek
-    from imblearn.pipeline import Pipeline as ImbPipeline
-    IMBLEARN_OK = True
-    print("imbalanced-learn: available ✓")
-except ImportError:
-    IMBLEARN_OK = False
-    print("imbalanced-learn: not installed — install with: pip install imbalanced-learn")
-    print("  Continuing with class_weight and threshold tuning only.")
-
-PALETTE = ["#5DCAA5", "#D85A30", "#EF9F27", "#7F77DD", "#378ADD", "#D4537E"]
-CLASS_NAMES = ["unhelpful", "neutral", "helpful"]
-
-sns.set_theme(style="whitegrid", font_scale=1.05)
-plt.rcParams.update({"figure.dpi": 130,
-                     "axes.spines.top": False,
-                     "axes.spines.right": False})
+configure_plotting()
 
 
 # ══════════════════════════════════════════════════════════════════════════════

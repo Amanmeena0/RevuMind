@@ -30,22 +30,14 @@ import matplotlib.gridspec as gridspec
 import seaborn as sns
 from collections import Counter
 
-import nltk
-from nltk.corpus import stopwords
-nltk.download("stopwords", quiet=True)
-
-STOP_WORDS = set(stopwords.words("english"))
+from revumind.utils.constants import STOP_WORDS, PALETTE, configure_plotting
 
 # ── Global style ───────────────────────────────────────────────────────────────
-PALETTE   = ["#5DCAA5", "#378ADD", "#EF9F27", "#D85A30", "#7F77DD",
-             "#D4537E", "#97C459", "#888780"]
-POS_COLOR = "#5DCAA5"
-NEG_COLOR = "#D85A30"
-NEU_COLOR = "#EF9F27"
+POS_COLOR = PALETTE[0]
+NEG_COLOR = PALETTE[3]
+NEU_COLOR = PALETTE[2]
 
-sns.set_theme(style="whitegrid", palette=PALETTE, font_scale=1.05)
-plt.rcParams.update({"figure.dpi": 130, "axes.spines.top": False,
-                     "axes.spines.right": False})
+configure_plotting()
 
 SAVE_FIGS = True   # set False to only show, not save
 

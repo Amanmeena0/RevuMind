@@ -33,6 +33,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from collections import Counter
 
+from revumind.utils.constants import STOP_WORDS, PALETTE, configure_plotting
+from revumind.data.synthetic import generate_review_data
+
 warnings.filterwarnings("ignore")
 
 # ── NLTK ──────────────────────────────────────────────────────────────────────
@@ -60,11 +63,9 @@ from sklearn.metrics import (
 )
 from sklearn.preprocessing import label_binarize
 
-STOP_WORDS = set(stopwords.words("english"))
 LEMMATIZER = WordNetLemmatizer()
 
 # ── Palette ───────────────────────────────────────────────────────────────────
-PALETTE = ["#5DCAA5", "#D85A30", "#7F77DD", "#EF9F27", "#378ADD"]
 CLASSES = [
     "positive_praise",
     "negative_complaint",
@@ -80,10 +81,7 @@ CLASS_LABELS = {
     "delivery_service":   "🚚 Delivery / Service",
 }
 
-sns.set_theme(style="whitegrid", font_scale=1.05)
-plt.rcParams.update({"figure.dpi": 130,
-                     "axes.spines.top": False,
-                     "axes.spines.right": False})
+configure_plotting()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -112,98 +110,13 @@ def preprocess(text: str) -> str:
 # 2.  SYNTHETIC DATASET BUILDER
 # ══════════════════════════════════════════════════════════════════════════════
 
-def build_dataset(n_per_class: int = 120) -> pd.DataFrame:
+def build_dataset(n: int = 800) -> pd.DataFrame:
     """
-    Build a labelled multi-class review dataset.
-    In your real project replace this with your actual reviews + labels.
+    Build a labelled multi-class review dataset using shared generator.
     """
-    templates = {
-        "positive_praise": [
-            "Absolutely love this product! {adj} quality and {adj2} performance.",
-            "Best purchase I have made this year. {adj} build and {adj2} value.",
-            "Amazing! Works {adv} and looks {adj}. Highly recommend to everyone.",
-            "Five stars! {adj} quality exceeded all my expectations. Will buy again.",
-            "Fantastic product. The {feature} is {adj} and delivery was fast.",
-            "Outstanding experience. Product is exactly as described. Love it!",
-            "Superb quality and {adj} performance. Very happy with this purchase.",
-            "Perfect product. {adj} design, {adj2} sound, and great battery life.",
-            "Excellent value for money. {adj} build quality. Totally recommend!",
-            "Incredible product. {adj} and {adj2}. Customer service was helpful.",
-        ],
-        "negative_complaint": [
-            "Terrible product. Broke after {n} days. Complete waste of money.",
-            "Worst purchase ever. {feature} stopped working immediately. Avoid!",
-            "Awful quality. Nothing like the pictures. Very disappointed overall.",
-            "Do not buy this! Stopped working after {n} weeks. Total garbage.",
-            "Horrible experience. Product is completely useless. Want refund now.",
-            "Disgusting quality. Broke on day {n}. Returning immediately. Terrible.",
-            "Complete junk. The {feature} never worked. This is a scam product.",
-            "Absolutely terrible. Fake product sent. Not what was advertised at all.",
-            "Pathetic quality. Falls apart easily. Worst product I have ever bought.",
-            "Very bad. {feature} does not work. Customer support refused to help.",
-        ],
-        "feature_request": [
-            "Good product but wish it had {feature2}. Would be perfect with that.",
-            "Nice product. Would be better if the {feature} was more {adj}.",
-            "Decent product. Please add {feature2} in the next version update.",
-            "Works well but needs {feature2}. Hope they add it in future models.",
-            "Good but could improve the {feature}. Suggestion: add {feature2}.",
-            "Okay product. If they add {feature2} it would be five stars easily.",
-            "Mostly happy but missing {feature2}. Please consider adding this.",
-            "Good design but the app needs improvement. Please add dark mode.",
-            "Product is fine but battery life could be longer. Otherwise great.",
-            "Nice but needs better {feature}. The {feature2} would help a lot.",
-        ],
-        "quality_issue": [
-            "Poor build quality. The {feature} feels very cheap and flimsy.",
-            "Material is {adj_neg}. Scratched on day one of normal use.",
-            "Terrible construction. The {feature} broke after light use only.",
-            "Very cheap material. Paint peeled off within {n} days of purchase.",
-            "Build is terrible. Plastic feels {adj_neg} and creaks constantly.",
-            "Low quality product. The joints are weak and the body {adj_neg}.",
-            "Defective item. The {feature} is misaligned and {feature} is loose.",
-            "Poor materials used. The {feature} snapped during first use.",
-            "Quality is not up to the mark. The {feature} feels {adj_neg}.",
-            "Very disappointed with build. Looks cheap and feels even cheaper.",
-        ],
-        "delivery_service": [
-            "Product is okay but delivery took {n} extra days. Very frustrating.",
-            "Packaging was terrible. Item arrived {adj_neg}ly damaged in the box.",
-            "Wrong item sent. Customer service took {n} days to respond. Bad.",
-            "Box was completely crushed. Product inside was damaged on arrival.",
-            "Delivery was {n} days late. No tracking updates. Very poor service.",
-            "Received wrong color. Return process is unnecessarily complicated.",
-            "Item was tampered with. Seal was broken when package arrived here.",
-            "Shipping was terrible. Package left in rain. Product got damaged.",
-            "False delivery marked. Had to call customer care {n} times. Awful.",
-            "Arrived with missing accessories. Packaging was very poor quality.",
-        ],
-    }
-
-    features  = ["screen","battery","camera","sound","speaker","button","hinge","strap"]
-    features2 = ["wireless charging","USB-C","dark mode","longer strap","volume control"]
-    adjs      = ["excellent","superb","brilliant","outstanding","fantastic","amazing"]
-    adjs2     = ["great","wonderful","incredible","phenomenal","terrific"]
-    adjs_neg  = ["brittle","flimsy","wobbly","rough","dull","fragile"]
-    adverbs   = ["perfectly","brilliantly","flawlessly","exceptionally"]
-
-    rows = []
-    np.random.seed(42)
-    for label, tmpl_list in templates.items():
-        for _ in range(n_per_class):
-            tmpl = np.random.choice(tmpl_list)
-            text = tmpl.format(
-                feature  = np.random.choice(features),
-                feature2 = np.random.choice(features2),
-                adj      = np.random.choice(adjs),
-                adj2     = np.random.choice(adjs2),
-                adj_neg  = np.random.choice(adjs_neg),
-                adv      = np.random.choice(adverbs),
-                n        = np.random.randint(2, 15),
-            )
-            rows.append({"review_text": text, "category": label})
-
-    df = pd.DataFrame(rows).sample(frac=1, random_state=42).reset_index(drop=True)
+    df = generate_review_data(n)
+    # Map aspects to categories if necessary, or just use as is
+    df = df.rename(columns={"aspect": "category"})
     return df
 
 

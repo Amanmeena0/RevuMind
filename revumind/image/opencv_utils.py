@@ -39,11 +39,9 @@ from dataclasses import dataclass, field
 from typing import Optional, Union
 from pathlib import Path
 
-warnings.filterwarnings("ignore")
+from revumind.utils.constants import PALETTE
 
-# ── Palette for matplotlib ────────────────────────────────────────────────────
-PALETTE = ["#5DCAA5", "#378ADD", "#EF9F27", "#D85A30", "#7F77DD",
-           "#D4537E", "#97C459", "#888780"]
+warnings.filterwarnings("ignore")
 
 print(f"OpenCV version : {cv2.__version__}")
 print(f"NumPy  version : {np.__version__}")

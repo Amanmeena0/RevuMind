@@ -1,28 +1,13 @@
-# Data Manipulation & Analysis
-pandas
-numpy
-scipy
+awscli
+black
+flake8
+isort
+mkdocs
+pip
+pytest
+python-dotenv
+-e .
 
-# Machine Learning & Modeling
-scikit-learn
-torch
-torchvision
-shap
-
-# Natural Language Processing
-nltk
-spacy
-beautifulsoup4
-
-# Computer Vision
-opencv-python
-Pillow
-
-# Data Visualization
-matplotlib
-seaborn
-plotly
-streamlit
-
-# Utilities
-requests
+# API
+fastapi
+uvicorn

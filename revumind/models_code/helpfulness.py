@@ -60,15 +60,13 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 
+from revumind.utils.constants import PALETTE, STOP_WORDS, configure_plotting
+
 warnings.filterwarnings("ignore")
 torch.manual_seed(42); np.random.seed(42); random.seed(42)
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-PALETTE = ["#5DCAA5", "#D85A30", "#EF9F27", "#7F77DD", "#378ADD", "#D4537E"]
-sns.set_theme(style="whitegrid", font_scale=1.05)
-plt.rcParams.update({"figure.dpi": 130,
-                     "axes.spines.top": False,
-                     "axes.spines.right": False})
+configure_plotting()
 
 print(f"PyTorch {torch.__version__} | Device: {DEVICE}")
 
@@ -211,15 +209,6 @@ def build_helpfulness_dataset(n: int = 300) -> pd.DataFrame:
 # ══════════════════════════════════════════════════════════════════════════════
 # 2.  FEATURE EXTRACTORS
 # ══════════════════════════════════════════════════════════════════════════════
-
-STOP_WORDS = {
-    'i','me','my','we','our','you','your','he','him','his','she','her','it',
-    'its','they','them','their','what','which','who','this','that','these',
-    'those','am','is','are','was','were','be','been','being','have','has',
-    'had','do','does','did','a','an','the','and','but','if','or','as','of',
-    'at','by','for','with','to','from','in','on','so','too','very','just',
-    'not','no','also','will','can','would','could','should',
-}
 
 def preprocess_text(text: str) -> str:
     text = text.lower()

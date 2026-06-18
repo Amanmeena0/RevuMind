@@ -40,38 +40,12 @@ import matplotlib.patches as mpatches
 import seaborn as sns
 from collections import Counter
 
+from revumind.utils.constants import PALETTE, STOP_WORDS, configure_plotting
+
 warnings.filterwarnings("ignore")
 np.random.seed(42)
 
-# ── Scikit-learn ──────────────────────────────────────────────────────────────
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.decomposition import TruncatedSVD
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report, accuracy_score, f1_score
-from sklearn.preprocessing import StandardScaler
-import scipy.sparse as sp
-
-# ── SHAP ──────────────────────────────────────────────────────────────────────
-try:
-    import shap
-    shap.initjs()
-    SHAP_OK = True
-    print(f"SHAP version: {shap.__version__} ✓")
-except ImportError:
-    SHAP_OK = False
-    print("SHAP not installed. Run: pip install shap")
-
-PALETTE = ["#5DCAA5", "#D85A30", "#EF9F27", "#7F77DD", "#378ADD", "#D4537E"]
-CLASS_NAMES = ["negative", "neutral", "positive"]
-
-sns.set_theme(style="whitegrid", font_scale=1.05)
-plt.rcParams.update({
-    "figure.dpi": 130,
-    "axes.spines.top": False,
-    "axes.spines.right": False,
-})
+configure_plotting()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 1.  DATASET
@@ -151,15 +125,6 @@ def build_dataset(n_per_class: int = 120) -> pd.DataFrame:
 # ══════════════════════════════════════════════════════════════════════════════
 # 2.  FEATURE EXTRACTION — with named features for SHAP
 # ══════════════════════════════════════════════════════════════════════════════
-
-STOP_WORDS = {
-    'i','me','my','we','our','you','your','it','its','they','them','am','is',
-    'are','was','were','be','been','have','has','had','do','does','did','a',
-    'an','the','and','but','if','or','as','of','at','by','for','with','to',
-    'from','in','on','so','too','very','just','not','also','this','that',
-    'will','can','would','could','should',
-}
-
 
 def preprocess(text: str) -> str:
     text = text.lower()

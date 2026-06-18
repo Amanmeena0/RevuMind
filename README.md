@@ -1,98 +1,61 @@
-# Multimodal Product Review Intelligence System
+# RevuMind
 
-The **Multimodal Product Review Intelligence System** is an intelligent platform that analyzes product reviews using both textual and visual data. By leveraging advanced machine learning and natural language processing techniques, the system provides deep insights into product perceptions and customer feedback across multiple modalities.
+<a target="_blank" href="https://cookiecutter-data-science.drivendata.org/">
+    <img src="https://img.shields.io/badge/CCDS-Project%20template-328F97?logo=cookiecutter" />
+</a>
 
-## Features
+The Multimodal Product Review Intelligence System is an intelligent platform that analyzes product reviews using both textual and visual data. By leveraging advanced machine learning and natural language processing techniques, the system provides deep insights into product perceptions and customer feedback across multiple modalities.
 
-- **Text Analysis:** Extracts sentiment, key themes, and trends from written product reviews.
-- **Image Processing:** Analyzes customer-uploaded images to enhance understanding of review context (e.g., image quality, product documentation).
-- **Multimodal Fusion:** Combines text and visual cues for richer, more accurate review intelligence.
-- **Automated Reports:** Generates dashboards and summaries for product managers and marketers.
-- **Custom Queries:** Allows users to search, filter, and analyze reviews based on custom criteria.
+## Project Organization
 
-## Technologies Used
+```
+├── LICENSE            <- Open-source license if one is chosen
+├── Makefile           <- Makefile with convenience commands like `make data` or `make train`
+├── README.md          <- The top-level README for developers using this project.
+├── data
+│   ├── external       <- Data from third party sources.
+│   ├── interim        <- Intermediate data that has been transformed.
+│   ├── processed      <- The final, canonical data sets for modeling.
+│   └── raw            <- The original, immutable data dump.
+│
+├── docs               <- A default mkdocs project; see www.mkdocs.org for details
+│
+├── models             <- Trained and serialized models, model predictions, or model summaries
+│
+├── notebooks          <- Jupyter notebooks. Naming convention is a number (for ordering),
+│                         the creator's initials, and a short `-` delimited description, e.g.
+│                         `1.0-jqp-initial-data-exploration`.
+│
+├── pyproject.toml     <- Project configuration file with package metadata for 
+│                         revumind and configuration for tools like black
+│
+├── references         <- Data dictionaries, manuals, and all other explanatory materials.
+│
+├── reports            <- Generated analysis as HTML, PDF, LaTeX, etc.
+│   └── figures        <- Generated graphics and figures to be used in reporting
+│
+├── requirements.txt   <- The requirements file for reproducing the analysis environment, e.g.
+│                         generated with `pip freeze > requirements.txt`
+│
+├── setup.cfg          <- Configuration file for flake8
+│
+└── revumind   <- Source code for use in this project.
+    │
+    ├── __init__.py             <- Makes revumind a Python module
+    │
+    ├── config.py               <- Store useful variables and configuration
+    │
+    ├── dataset.py              <- Scripts to download or generate data
+    │
+    ├── features.py             <- Code to create features for modeling
+    │
+    ├── modeling                
+    │   ├── __init__.py 
+    │   ├── predict.py          <- Code to run model inference with trained models          
+    │   └── train.py            <- Code to train models
+    │
+    └── plots.py                <- Code to create visualizations
+```
 
-- Python 3.x
-- Natural Language Processing (NLP): Transformers, spaCy/NLTK, Hugging Face models
-- Computer Vision: OpenCV, PyTorch/TensorFlow, pre-trained CNNs/Vision Transformers
-- Data Visualization: Matplotlib, Seaborn, Plotly
-- Web Framework: Flask/FastAPI/Django (update per your implementation)
-- Database: MongoDB/PostgreSQL/SQLite
-- Frontend: React/Vue.js (if applicable)
+--------
 
-## Getting Started
-
-### Prerequisites
-
-- Python 3.8+
-- pip (Python package installer)
-- (Optional) Node.js and npm (if frontend included)
-
-### Installation
-
-1. **Clone the Repository:**
-   ```bash
-   git clone https://github.com/Amanmeena0/RevuMind.git
-   cd RevuMind
-   ```
-
-2. **Install Python dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **(Optional) Install frontend dependencies:**
-   ```bash
-   cd frontend
-   npm install
-   cd ..
-   ```
-
-4. **Set up environment variables**
-   - Create a `.env` file with any required API keys or configuration.
-
-### Running the Application
-
-- **Backend:**
-  ```bash
-  python app.py
-  ```
-- **Frontend (if applicable):**
-  ```bash
-  cd frontend
-  npm start
-  ```
-
-## Usage
-
-- Visit [http://localhost:5000](http://localhost:5000) to interact with the system.
-- Upload product reviews (text/image), run analysis, and view intelligence reports.
-
-## Example
-
-- **Text Review:**  
-  *"The headphones are very comfortable and the sound quality is amazing!"*  
-  → Detected Sentiment: Positive; Key Themes: Comfort, Sound Quality
-
-- **Image Review:**  
-  ![example-product-image](docs/example-review.jpg)  
-  → Detected: Product in good condition, clear brand logo
-
-## Contributing
-
-Contributions are welcome! Please open an issue or submit a pull request for improvements or bug fixes.
-
-1. Fork this repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some feature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## License
-
-[MIT License](LICENSE)
-
-## Contact
-
-- Project Repository: [https://github.com/Amanmeena0/RevuMind](https://github.com/Amanmeena0/RevuMind)
-- Maintainer: Aman Meena

@@ -65,12 +65,10 @@ import scipy.sparse as sp
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD  = [0.229, 0.224, 0.225]
-PALETTE = ["#5DCAA5", "#D85A30", "#EF9F27", "#7F77DD", "#378ADD", "#D4537E"]
 
-sns.set_theme(style="whitegrid", font_scale=1.05)
-plt.rcParams.update({"figure.dpi": 130,
-                     "axes.spines.top": False,
-                     "axes.spines.right": False})
+from revumind.utils.constants import PALETTE, STOP_WORDS, configure_plotting
+
+configure_plotting()
 
 print(f"PyTorch: {torch.__version__} | Device: {DEVICE}")
 
@@ -277,16 +275,6 @@ class CNNFeatureExtractor:
 # ══════════════════════════════════════════════════════════════════════════════
 # 3.  TEXT FEATURE EXTRACTOR
 # ══════════════════════════════════════════════════════════════════════════════
-
-STOP_WORDS = {
-    'i','me','my','we','our','you','your','he','him','his','she','her','it',
-    'its','they','them','their','what','which','who','this','that','these',
-    'those','am','is','are','was','were','be','been','being','have','has',
-    'had','do','does','did','a','an','the','and','but','if','or','as','of',
-    'at','by','for','with','to','from','in','on','so','too','very','just',
-    'not','no','nor','only','also','well','get','got','would','could','should',
-    'will','can','may','might','must','shall','up','out','about','into',
-}
 
 def preprocess_text(text: str) -> str:
     text = text.lower()
