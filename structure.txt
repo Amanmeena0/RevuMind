@@ -1,0 +1,102 @@
+.
+├── Makefile
+├── README.md
+├── Workflow.png
+├── archive
+│   ├── Reviews.csv
+│   ├── database.sqlite
+│   └── hashes.txt
+├── data
+│   ├── external
+│   ├── interim
+│   ├── processed
+│   └── raw
+├── docs
+│   ├── README.md
+│   ├── docs
+│   │   ├── getting-started.md
+│   │   └── index.md
+│   └── mkdocs.yml
+├── models
+├── notebooks
+├── presentation
+│   ├── node_modules
+│   │   ├── @emnapi
+│   │   ├── @img
+│   │   ├── @types
+│   │   ├── core-util-is
+│   │   ├── detect-libc
+│   │   ├── https
+│   │   ├── image-size
+│   │   ├── immediate
+│   │   ├── inherits
+│   │   ├── isarray
+│   │   ├── jszip
+│   │   ├── lie
+│   │   ├── pako
+│   │   ├── pptxgenjs
+│   │   ├── process-nextick-args
+│   │   ├── queue
+│   │   ├── react
+│   │   ├── react-dom
+│   │   ├── react-icons
+│   │   ├── readable-stream
+│   │   ├── safe-buffer
+│   │   ├── scheduler
+│   │   ├── semver
+│   │   ├── setimmediate
+│   │   ├── sharp
+│   │   ├── string_decoder
+│   │   ├── tslib
+│   │   ├── undici-types
+│   │   └── util-deprecate
+│   ├── package-lock.json
+│   ├── package.json
+│   └── presentation.js
+├── pyproject.toml
+├── references
+├── reports
+│   └── figures
+├── requirements.txt
+├── revumind
+│   ├── __init__.py
+│   ├── api
+│   │   └── __init__.py
+│   ├── data
+│   │   ├── __init__.py
+│   │   ├── eda.py
+│   │   ├── features.py
+│   │   ├── scraping.py
+│   │   └── synthetic.py
+│   ├── image
+│   │   ├── __init__.py
+│   │   ├── fusion.py
+│   │   ├── opencv_utils.py
+│   │   └── resnet50.py
+│   ├── models_code
+│   │   ├── __init__.py
+│   │   ├── helpfulness.py
+│   │   └── tuning.py
+│   ├── nlp
+│   │   ├── __init__.py
+│   │   ├── classifier.py
+│   │   ├── ner.py
+│   │   ├── nltk_utils.py
+│   │   └── sentiment.py
+│   ├── utils
+│   │   ├── __init__.py
+│   │   └── constants.py
+│   └── visualization
+│       ├── __init__.py
+│       ├── business_insights.py
+│       ├── dashboard.py
+│       ├── explainability.py
+│       └── styles.css
+├── setup.cfg
+├── structure.txt
+└── tests
+    ├── __pycache__
+    │   └── test_data.cpython-314-pytest-9.1.0.pyc
+    └── test_data.py
+
+55 directories, 45 files

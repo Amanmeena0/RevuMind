@@ -11,3 +11,12 @@ python-dotenv
 # API
 fastapi
 uvicorn
+numpy
+pandas 
+scikit-learn
+pytorch
+matplotlib
+nltk
+bs4
+pytest
+Pillow
