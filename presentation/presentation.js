@@ -344,19 +344,21 @@ const mkShadow = () => ({ type: "outer", color: "000000", blur: 8, offset: 3, an
     addHeader(s, iconChart, "Visual Dashboard Layer (Step 11)");
 
     const elements = [
-      { title: "Real-Time KPI Cards", desc: "Monitors review volumes, sentiment ratios, and helpfulness metrics dynamically." },
-      { title: "Aspect Sentiment Heatmap", desc: "Displays positive, neutral, and negative metrics across key product aspect features." },
-      { title: "Extractive Cohort summaries", desc: "Renders executive summary blocks generated from review cohorts." }
+      { title: "Real-Time KPI Cards", desc: "Monitors review volumes, sentiment ratios, and helpfulness metrics dynamically.", img: "real_time_kpi_cards.jpg" },
+      { title: "Aspect Sentiment Heatmap", desc: "Displays positive, neutral, and negative metrics across key product aspect features.", img: "aspect_sentiment_heatmap.jpg" },
+      { title: "Extractive Cohort summaries", desc: "Renders executive summary blocks generated from review cohorts.", img: "extractive_cohort_summaries.jpg" }
     ];
 
     elements.forEach((p, i) => {
       const x = 0.5 + i * 3.1;
       s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x, y: 1.25, w: 2.8, h: 3.85, fill: { color: WHITE }, shadow: mkShadow(), rectRadius: 0.12 });
-      s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x: x + 0.15, y: 1.4, w: 2.5, h: 2.1, fill: { color: "EBF5FB" }, rectRadius: 0.08 });
-      s.addText("[ Streamlit Visualization ]", {
-        x: x + 0.15, y: 1.4, w: 2.5, h: 1.0,
-        fontSize: 10.5, fontFace: "Calibri", color: MID, align: "center", valign: "bottom", italic: true
+      
+      const imgPath = path.join(__dirname, "../reports/figures", p.img);
+      s.addImage({
+        path: imgPath,
+        x: x + 0.15, y: 1.4, w: 2.5, h: 2.1
       });
+
       s.addText(p.title, {
         x: x + 0.1, y: 3.7, w: 2.6, h: 0.4, fontSize: 12, fontFace: "Cambria", bold: true, color: MID, align: "center", margin: 0
       });
