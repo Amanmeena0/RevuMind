@@ -170,43 +170,43 @@ The process ingestion pipe goes from the local raw CSV dataset to an analytical 
 
 ```mermaid
 flowchart LR
-    A[Local Raw Dataset: archive/Reviews.csv] --> B[Data Ingestion / Validation]
-    B --> C[Preprocessing Pipeline (preprocess.py)]
+    A["Local Raw Dataset: archive/Reviews.csv"] --> B["Data Ingestion / Validation"]
+    B --> C["Preprocessing Pipeline (preprocess.py)"]
     
-    subgraph Preprocessing ["Step 2: Preprocessing"]
-        C --> C1[Remove Duplicates & Nulls]
-        C1 --> C2[Strip HTML, URLs & Emojis]
-        C2 --> C3[Language Filtering & Text Normalization]
-        C3 --> C4[Merge Summary + Text]
+    subgraph Preprocessing["Step 2: Preprocessing"]
+        C --> C1["Remove Duplicates & Nulls"]
+        C1 --> C2["Strip HTML, URLs & Emojis"]
+        C2 --> C3["Language Filtering & Text Normalization"]
+        C3 --> C4["Merge Summary + Text"]
     end
 
-    C4 -->|clean_review_text| D[Inference Orchestrator]
+    C4 -->|clean_review_text| D["Inference Orchestrator"]
 
-    subgraph Models ["Models Execution Pipeline (Steps 3-7)"]
-        D --> D1[all-MiniLM-L6-v2 Embeddings]
-        D --> D2[RoBERTa Sentiment]
-        D --> D3[spaCy TRF NER]
-        D --> D4[DeBERTa ABSA]
-        D1 -->|Embeddings Vector| D5[BERTopic Modeling]
+    subgraph Models["Models Execution Pipeline (Steps 3-7)"]
+        D --> D1["all-MiniLM-L6-v2 Embeddings"]
+        D --> D2["RoBERTa Sentiment"]
+        D --> D3["spaCy TRF NER"]
+        D --> D4["DeBERTa ABSA"]
+        D1 -->|Embeddings Vector| D5["BERTopic Modeling"]
     end
 
-    D2 & D3 & D4 & D5 --> E[Feature Extraction for Tabular Features]
+    D2 & D3 & D4 & D5 --> E["Feature Extraction for Tabular Features"]
     
-    subgraph Helpfulness ["Step 9: XGBoost Model"]
-        E --> F[Generate Tabular Vector]
-        F --> G[XGBoost Predict Helpfulness]
+    subgraph Helpfulness["Step 9: XGBoost Model"]
+        E --> F["Generate Tabular Vector"]
+        F --> G["XGBoost Predict Helpfulness"]
     end
 
-    G & D2 & D3 & D4 & D5 --> H[Aggregations Layer]
+    G & D2 & D3 & D4 & D5 --> H["Aggregations Layer"]
 
-    subgraph Summarizer ["Step 8: BART Summary"]
-        H --> I[Group Reviews by Product/Topic/Sentiment]
-        I --> J[BART Executive Summarizer]
+    subgraph Summarizer["Step 8: BART Summary"]
+        H --> I["Group Reviews by Product/Topic/Sentiment"]
+        I --> J["BART Executive Summarizer"]
     end
 
-    J & H --> K[Business Insights Engine]
-    K --> L[(PostgreSQL + pgvector)]
-    L --> M[API Dashboard Layer]
+    J & H --> K["Business Insights Engine"]
+    K --> L[("PostgreSQL + pgvector")]
+    L --> M["API Dashboard Layer"]
 ```
 
 ---
