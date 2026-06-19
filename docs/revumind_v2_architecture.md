@@ -324,8 +324,8 @@ The training pipeline is structured to handle periodic model updates and fine-tu
 
 ```mermaid
 flowchart TD
-    A[Local Dataset: archive/Reviews.csv] --> B[Data Validation & DVC Sync]
-    B --> C[Preprocessing Run (preprocess.py)]
+    A["Local Dataset: archive/Reviews.csv"] --> B["Data Validation & DVC Sync"]
+    B --> C["Preprocessing Run (preprocess.py)"]
     C --> D{Split Dataset}
     
     %% Split branches
@@ -335,13 +335,13 @@ flowchart TD
     D -->|Train Split| E4[Fit BERTopic Pipeline]
     D -->|Train Split| E5[Train XGBoost Helpfulness]
     
-    E1 & E2 & E3 & E4 & E5 --> F[Evaluate on Validation Split]
-    F --> G{Pass Accuracy/F1 Gate?}
+    E1 & E2 & E3 & E4 & E5 --> F["Evaluate on Validation Split"]
+    F --> G{"Pass Accuracy/F1 Gate?"}
     
-    G -->|No| H[Flag Alert / Retune Hyperparameters]
+    G -->|No| H["Flag Alert / Retune Hyperparameters"]
     G -->|Yes| I[Log Metrics to MLflow]
-    I --> J[Save Weights to S3 / MLflow Registry]
-    J --> K[Trigger CI/CD Deployment to Triton Server]
+    I --> J["Save Weights to S3 / MLflow Registry"]
+    J --> K["Trigger CI/CD Deployment to Triton Server"]
 ```
 
 ### Data Split & Loss Objectives
