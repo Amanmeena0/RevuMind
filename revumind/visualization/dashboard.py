@@ -338,6 +338,76 @@ def plotly_layout(title: str = "", height: int = 340) -> dict:
     )
 
 
+# Load database configurations dynamically
+def load_real_data_from_db() -> pd.DataFrame:
+    """
+    Attempts to load real analyzed review records from the SQLite database.
+    Maps database schema to the columns expected by the Streamlit dashboard.
+    """
+    import sqlite3
+    import os
+    db_path = "revumind.db"
+    if not os.path.exists(db_path):
+        return None
+        
+    try:
+        conn = sqlite3.connect(db_path)
+        # Query reviews table
+        query = """
+            SELECT 
+                r.id as id,
+                r.product_id as product,
+                r.review_text as review_text,
+                r.overall_sentiment as sentiment,
+                r.score as star_rating,
+                r.helpfulness_denominator as helpful_votes,
+                r.review_time as review_date
+            FROM reviews r
+        """
+        df = pd.read_sql_query(query, conn)
+        
+        if len(df) == 0:
+            conn.close()
+            return None
+            
+        # Load aspect mapping dynamically from aspect_sentiments table if available
+        try:
+            df_aspects = pd.read_sql_query("SELECT review_id, aspect_term FROM aspect_sentiments", conn)
+            aspect_map = df_aspects.groupby("review_id")["aspect_term"].first().to_dict()
+        except Exception:
+            aspect_map = {}
+            
+        conn.close()
+        
+        # Format columns
+        df["review_date"] = pd.to_datetime(df["review_date"])
+        df["verified"] = True
+        df["img_defect"] = 0
+        df["is_defect"] = (df["sentiment"] == "negative").astype(int)
+        df["aspect"] = df["id"].map(aspect_map).fillna("Value")
+        
+        # Map aspect to capitalized value
+        df["aspect"] = df["aspect"].str.capitalize()
+        
+        return df
+    except Exception as e:
+        return None
+
+def get_dashboard_data() -> pd.DataFrame:
+    """
+    Tries to retrieve real database records first;
+    falls back to synthetic data generation if database is empty.
+    """
+    db_df = load_real_data_from_db()
+    if db_df is not None and len(db_df) >= 5:
+        # Calculate monthly period keys required by dashboard
+        db_df["month"]    = db_df["review_date"].dt.to_period("M").astype(str)
+        db_df["month_dt"] = pd.to_datetime(db_df["month"])
+        db_df["quarter"]  = db_df["review_date"].dt.to_period("Q").astype(str)
+        return db_df
+    return generate_data(1200)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # SIDEBAR FILTERS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -350,12 +420,13 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    df_all = generate_data(1200)
+    df_all = get_dashboard_data()
 
+    unique_products = sorted(df_all["product"].unique().tolist())
     selected_products = st.multiselect(
         "Products",
-        options=PRODUCTS,
-        default=PRODUCTS,
+        options=unique_products,
+        default=unique_products,
     )
 
     date_min = df_all["review_date"].min().date()

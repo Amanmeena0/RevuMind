@@ -778,3 +778,60 @@ gantt
 2. **Distributed Stream Processing**: Integrate Apache Kafka and Apache Flink to stream review ingestion, running analysis in near-real-time as customers post feedback.
 3. **LLM RAG Integration**: Use the extracted 384-dimensional vector embeddings to build a Retrieval-Augmented Generation (RAG) agent. This will allow business users to ask conversational questions about their reviews (e.g., *"Why are users complaining about shipping in California?"*).
 4. **Distillation**: Train smaller student models (e.g., DistilRoBERTa, TinyBERT) to replace the larger transformer models for high-volume endpoints, reducing infrastructure costs.
+
+---
+
+## 17. Implementation Log & Run Guide
+
+All core components of the platform have been successfully coded, integrated, and verified locally inside this repository:
+
+### Codebase Deliverables Reference
+
+*   **Ingestion & Preprocessing (Step 2)**:
+    *   File: [preprocess.py](file:///Users/amanmeena/Documents/Work/RevuMind/revumind/pipeline/preprocess.py)
+    *   Fuction: `preprocess_dataset()`
+*   **Text Statistics & Readability Calculation**:
+    *   File: [readability.py](file:///Users/amanmeena/Documents/Work/RevuMind/revumind/utils/readability.py)
+    *   Function: `calculate_readability()` (Computes Flesch Reading Ease & Flesch-Kincaid Grade Level)
+*   **Model Wrappers & Adapters (Steps 3-9)**:
+    *   RoBERTa Sentiment Training: [train.py](file:///Users/amanmeena/Documents/Work/RevuMind/revumind/models/sentiment/train.py)
+    *   spaCy Transformer NER Wrapper: [model.py](file:///Users/amanmeena/Documents/Work/RevuMind/revumind/models/ner/model.py)
+    *   all-MiniLM Embeddings Wrapper: [model.py](file:///Users/amanmeena/Documents/Work/RevuMind/revumind/models/embeddings/model.py)
+    *   DeBERTa ABSA Sentiment Wrapper: [model.py](file:///Users/amanmeena/Documents/Work/RevuMind/revumind/models/absa/model.py)
+    *   BERTopic Clustering Wrapper: [model.py](file:///Users/amanmeena/Documents/Work/RevuMind/revumind/models/topics/model.py)
+    *   BART Seq2Seq Summarizer Wrapper: [model.py](file:///Users/amanmeena/Documents/Work/RevuMind/revumind/models/summarizer/model.py)
+    *   XGBoost Helpfulness Training: [train.py](file:///Users/amanmeena/Documents/Work/RevuMind/revumind/models/helpfulness/train.py)
+*   **Pipeline Coordination & DB Ingestion (Step 10)**:
+    *   7-Model Inference Orchestrator: [inference.py](file:///Users/amanmeena/Documents/Work/RevuMind/revumind/pipeline/inference.py)
+    *   Unified Training Orchestrator: [train_all.py](file:///Users/amanmeena/Documents/Work/RevuMind/revumind/pipeline/train_all.py)
+    *   Database Ingestor Pipeline: [ingest_to_db.py](file:///Users/amanmeena/Documents/Work/RevuMind/revumind/pipeline/ingest_to_db.py)
+*   **Database Config & Relational ORM models (SQLite/pgvector)**:
+    *   File: [database.py](file:///Users/amanmeena/Documents/Work/RevuMind/revumind/core/database.py) | [models.py](file:///Users/amanmeena/Documents/Work/RevuMind/revumind/db/models.py) | [init_db.py](file:///Users/amanmeena/Documents/Work/RevuMind/revumind/db/init_db.py)
+*   **Visual Dashboard UI Layer (Step 11)**:
+    *   File: [dashboard.py](file:///Users/amanmeena/Documents/Work/RevuMind/revumind/visualization/dashboard.py)
+*   **Academic Slide presentation Builder**:
+    *   File: [presentation.js](file:///Users/amanmeena/Documents/Work/RevuMind/presentation/presentation.js) | Outputs: [RevuMind_V2_Presentation.pptx](file:///Users/amanmeena/Documents/Work/RevuMind/presentation/RevuMind_V2_Presentation.pptx)
+
+### Execution Sequence
+
+1.  **Initialize local SQLite Database File**:
+    ```bash
+    .venv/bin/python revumind/db/init_db.py
+    ```
+2.  **Run Full Training Cascade (Fitting Topic Model & Helpfulness Classifier)**:
+    ```bash
+    .venv/bin/python revumind/pipeline/train_all.py --sample_size 5000 --min_votes 1
+    ```
+3.  **Run Cascade Inference & Ingest Analysed Data to Database**:
+    ```bash
+    .venv/bin/python revumind/pipeline/ingest_to_db.py --sample_size 100
+    ```
+4.  **Launch Database-Connected Streamlit Dashboard**:
+    ```bash
+    .venv/bin/streamlit run revumind/visualization/dashboard.py
+    ```
+5.  **Compile Academic PowerPoint Presentation**:
+    ```bash
+    cd presentation && node presentation.js && cd ..
+    ```
+
