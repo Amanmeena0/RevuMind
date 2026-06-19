@@ -1,3 +1,4 @@
+# Development & Testing Tools
 awscli
 black
 flake8
@@ -6,17 +7,40 @@ mkdocs
 pip
 pytest
 python-dotenv
+
+# Project package
 -e .
 
-# API
+# API & Web Framework
 fastapi
 uvicorn
+streamlit
+
+# Data Processing & Analysis
 numpy
-pandas 
+pandas
+pyarrow
+scipy
+
+# Machine Learning & NLP
 scikit-learn
-pytorch
-matplotlib
 nltk
-bs4
-pytest
+
+# Deep Learning
+torch
+torchvision
+
+# Computer Vision
+opencv-python
 Pillow
+
+# NLP & Text Processing
+spacy
+beautifulsoup4
+lxml
+requests
+
+# Visualization
+matplotlib
+seaborn
+plotly
