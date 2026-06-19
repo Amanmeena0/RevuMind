@@ -166,12 +166,12 @@ revumind/
 
 ## 3. Data Flow Diagram
 
-The process ingestion pipe goes from an immutable CSV raw storage to an analytical dashboard database representation.
+The process ingestion pipe goes from the local raw CSV dataset to an analytical dashboard database representation.
 
 ```mermaid
 flowchart LR
-    A[Raw CSV Ingestion] --> B[Data Validation]
-    B --> C[Preprocessing Pipeline]
+    A[Local Raw Dataset: archive/Reviews.csv] --> B[Data Ingestion / Validation]
+    B --> C[Preprocessing Pipeline (preprocess.py)]
     
     subgraph Preprocessing ["Step 2: Preprocessing"]
         C --> C1[Remove Duplicates & Nulls]
@@ -324,8 +324,8 @@ The training pipeline is structured to handle periodic model updates and fine-tu
 
 ```mermaid
 flowchart TD
-    A[Raw Amazon CSVs] --> B[Data Validation & DVC Sync]
-    B --> C[Preprocessing Run]
+    A[Local Dataset: archive/Reviews.csv] --> B[Data Validation & DVC Sync]
+    B --> C[Preprocessing Run (preprocess.py)]
     C --> D{Split Dataset}
     
     %% Split branches
@@ -394,10 +394,11 @@ FastAPI Route
 Save outputs to PostgreSQL ──► Return JSON Response
 ```
 
-### Asynchronous Batch Processing (CSV Upload)
-*   **Step 1**: The client uploads a CSV file containing reviews. FastAPI validates the schema and stores the file on S3.
-*   **Step 2**: An ingestion task is queued in RabbitMQ and picked up by Celery workers.
-*   **Step 3**: Celery workers stream the CSV contents, run preprocessing, and batch the reviews.
+### Asynchronous Batch Processing (CSV Upload & Local Ingestion)
+*   **Alternative Ingestion (Local Dataset)**: For batch processing of the existing `./archive/Reviews.csv` dataset, the pipeline runs chunk-based extraction to generate a cleaned dataset at `./data/processed/clean_reviews.csv`.
+*   **Step 1**: The client uploads a CSV file containing reviews (or points to a local path like `./archive/Reviews.csv`). FastAPI/Celery validates the schema and stores the file on S3/local staging.
+*   **Step 2**: An ingestion task is queued in RabbitMQ/Redis and picked up by Celery workers.
+*   **Step 3**: Celery workers stream the CSV contents (e.g. from `./archive/Reviews.csv`), execute the cleaning pipeline in `preprocess.py`, and create mini-batches.
 *   **Step 4**: Batched requests are sent to Triton via gRPC to leverage GPU compute.
 *   **Step 5**: Results are saved to the database in bulk using SQLAlchemy Core `bulk_insert_mappings()`.
 *   **Step 6**: The database tables are updated, and a WebSocket or email notification is sent to the user upon completion.
