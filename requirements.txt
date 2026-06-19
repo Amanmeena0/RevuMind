@@ -31,7 +31,6 @@ torch
 torchvision
 
 # Computer Vision
-opencv-python
 Pillow
 
 # NLP & Text Processing
