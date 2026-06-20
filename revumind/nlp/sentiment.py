@@ -21,53 +21,59 @@ Usage:
 
 import re
 import warnings
+
+import matplotlib
 import numpy as np
 import pandas as pd
-import matplotlib
+
 matplotlib.use("Agg")
+from collections import Counter
+
 import matplotlib.pyplot as plt
 import seaborn as sns
-from collections import Counter
 
 warnings.filterwarnings("ignore")
 
 # ── NLTK ──────────────────────────────────────────────────────────────────────
 import nltk
-for pkg in ["vader_lexicon", "stopwords", "punkt", "wordnet",
-            "averaged_perceptron_tagger"]:
+
+for pkg in ["vader_lexicon", "stopwords", "punkt", "wordnet", "averaged_perceptron_tagger"]:
     nltk.download(pkg, quiet=True)
 
-from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from nltk.corpus import stopwords
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from nltk.stem import WordNetLemmatizer
+import scipy.sparse as sp
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.ensemble import RandomForestClassifier, VotingClassifier
 
 # ── Scikit-learn ──────────────────────────────────────────────────────────────
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier, VotingClassifier
-from sklearn.svm import LinearSVC
-from sklearn.pipeline import Pipeline
-from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
 from sklearn.metrics import (
-    classification_report, confusion_matrix,
-    roc_auc_score, accuracy_score, f1_score,
+    accuracy_score,
+    classification_report,
+    confusion_matrix,
+    f1_score,
+    roc_auc_score,
 )
+from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import LabelEncoder
-from sklearn.calibration import CalibratedClassifierCV
+from sklearn.svm import LinearSVC
 from sklearn.utils.class_weight import compute_class_weight
-import scipy.sparse as sp
 
 STOP_WORDS = set(stopwords.words("english"))
 LEMMATIZER = WordNetLemmatizer()
-VADER_SIA  = SentimentIntensityAnalyzer()
+VADER_SIA = SentimentIntensityAnalyzer()
 
 # ── Colour palette ────────────────────────────────────────────────────────────
 PALETTE = {
     "positive": "#5DCAA5",
-    "neutral":  "#EF9F27",
+    "neutral": "#EF9F27",
     "negative": "#D85A30",
-    "blue":     "#378ADD",
-    "purple":   "#7F77DD",
+    "blue": "#378ADD",
+    "purple": "#7F77DD",
 }
 
 
@@ -75,15 +81,16 @@ PALETTE = {
 # 1.  TEXT PREPROCESSING
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def clean_text(text: str) -> str:
     if not isinstance(text, str):
         return ""
     text = text.lower()
     text = re.sub(r"http\S+|www\.\S+", " ", text)
-    text = re.sub(r"<[^>]+>",          " ", text)
-    text = re.sub(r"[^\w\s]",          " ", text)
-    text = re.sub(r"\d+",              " ", text)
-    text = re.sub(r"\s+",              " ", text).strip()
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"[^\w\s]", " ", text)
+    text = re.sub(r"\d+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
     return text
 
 
@@ -99,11 +106,12 @@ def preprocess(text: str) -> str:
 # 2.  LABELLING HELPER
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def make_sentiment_label(
     df: pd.DataFrame,
     star_col: str = "star_rating",
-    mode: str = "binary",          # "binary"  → pos / neg
-                                   # "ternary" → pos / neu / neg
+    mode: str = "binary",  # "binary"  → pos / neg
+    # "ternary" → pos / neu / neg
 ) -> pd.Series:
     """
     Convert star rating to sentiment label.
@@ -129,6 +137,7 @@ def make_sentiment_label(
 # 3.  VADER SCORER
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def vader_score(text: str) -> dict:
     """Return all 4 VADER scores for a raw (uncleaned) text."""
     return VADER_SIA.polarity_scores(text)
@@ -149,16 +158,17 @@ def add_vader_features(df: pd.DataFrame, text_col: str = "review_text") -> pd.Da
     scores = df[text_col].fillna("").apply(vader_score)
     df = df.copy()
     df["vader_compound"] = scores.apply(lambda s: s["compound"])
-    df["vader_pos"]      = scores.apply(lambda s: s["pos"])
-    df["vader_neg"]      = scores.apply(lambda s: s["neg"])
-    df["vader_neu"]      = scores.apply(lambda s: s["neu"])
-    df["vader_label"]    = df["vader_compound"].apply(vader_label)
+    df["vader_pos"] = scores.apply(lambda s: s["pos"])
+    df["vader_neg"] = scores.apply(lambda s: s["neg"])
+    df["vader_neu"] = scores.apply(lambda s: s["neu"])
+    df["vader_label"] = df["vader_compound"].apply(vader_label)
     return df
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 4.  ML SENTIMENT PIPELINE
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class SentimentAnalyser:
     """
@@ -170,59 +180,67 @@ class SentimentAnalyser:
 
     def __init__(
         self,
-        mode:           str   = "binary",    # "binary" | "ternary"
-        tfidf_features: int   = 8000,
-        ngram_range:    tuple = (1, 2),
-        ensemble_weight: float = 0.4,        # weight of VADER in ensemble (0-1)
+        mode: str = "binary",  # "binary" | "ternary"
+        tfidf_features: int = 8000,
+        ngram_range: tuple = (1, 2),
+        ensemble_weight: float = 0.4,  # weight of VADER in ensemble (0-1)
     ):
-        self.mode            = mode
-        self.tfidf_features  = tfidf_features
-        self.ngram_range     = ngram_range
-        self.ensemble_weight = ensemble_weight   # 1-weight goes to ML model
-        self.classes_        = None
+        self.mode = mode
+        self.tfidf_features = tfidf_features
+        self.ngram_range = ngram_range
+        self.ensemble_weight = ensemble_weight  # 1-weight goes to ML model
+        self.classes_ = None
         self.best_model_name = None
 
         # TF-IDF vectoriser (shared across all models)
         self.vectorizer = TfidfVectorizer(
-            max_features = tfidf_features,
-            ngram_range  = ngram_range,
-            min_df       = 2,
-            max_df       = 0.95,
-            sublinear_tf = True,
+            max_features=tfidf_features,
+            ngram_range=ngram_range,
+            min_df=2,
+            max_df=0.95,
+            sublinear_tf=True,
         )
 
         # Three classifiers to compare
         self.models = {
             "Logistic Regression": LogisticRegression(
-                C=1.0, max_iter=1000, class_weight="balanced",
-                solver="lbfgs", multi_class="auto",
+                C=1.0,
+                max_iter=1000,
+                class_weight="balanced",
+                solver="lbfgs",
+                multi_class="auto",
             ),
             "Linear SVC": CalibratedClassifierCV(
                 LinearSVC(C=1.0, max_iter=2000, class_weight="balanced")
             ),
             "Random Forest": RandomForestClassifier(
-                n_estimators=200, max_depth=20,
-                class_weight="balanced", random_state=42, n_jobs=-1,
+                n_estimators=200,
+                max_depth=20,
+                class_weight="balanced",
+                random_state=42,
+                n_jobs=-1,
             ),
         }
-        self.best_model   = None
+        self.best_model = None
         self.label_encoder = LabelEncoder()
-        self._is_fitted    = False
+        self._is_fitted = False
 
     # ── Fit ───────────────────────────────────────────────────────────────────
     def fit(
         self,
-        df:        pd.DataFrame,
-        text_col:  str = "review_text",
-        label_col: str = "star_rating",   # star_rating OR sentiment_label
+        df: pd.DataFrame,
+        text_col: str = "review_text",
+        label_col: str = "star_rating",  # star_rating OR sentiment_label
     ) -> "SentimentAnalyser":
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("  TRAINING SENTIMENT ANALYSER")
-        print("="*60)
+        print("=" * 60)
 
         # ── Labels ────────────────────────────────────────────────────────────
-        if df[label_col].isin([1, 2, 3, 4, 5]).all() or \
-           pd.to_numeric(df[label_col], errors="coerce").between(1, 5).all():
+        if (
+            df[label_col].isin([1, 2, 3, 4, 5]).all()
+            or pd.to_numeric(df[label_col], errors="coerce").between(1, 5).all()
+        ):
             df = df.copy()
             df["_label"] = make_sentiment_label(df, label_col, self.mode)
         else:
@@ -239,28 +257,25 @@ class SentimentAnalyser:
 
         # ── VADER features ────────────────────────────────────────────────────
         df = add_vader_features(df, text_col)
-        print(f"  VADER accuracy  : "
-              f"{(df['vader_label'] == df['_label']).mean():.1%}")
+        print(f"  VADER accuracy  : " f"{(df['vader_label'] == df['_label']).mean():.1%}")
 
         # ── Train / test split ────────────────────────────────────────────────
-        X_text  = df["_processed"].values
-        y       = df["_label"].values
-        X_vader = df[["vader_compound","vader_pos","vader_neg","vader_neu"]].values
+        X_text = df["_processed"].values
+        y = df["_label"].values
+        X_vader = df[["vader_compound", "vader_pos", "vader_neg", "vader_neu"]].values
 
-        X_train_t, X_test_t, X_vader_train, X_vader_test, y_train, y_test = \
-            train_test_split(X_text, X_vader, y,
-                             test_size=0.2, random_state=42, stratify=y)
+        X_train_t, X_test_t, X_vader_train, X_vader_test, y_train, y_test = train_test_split(
+            X_text, X_vader, y, test_size=0.2, random_state=42, stratify=y
+        )
 
         # ── TF-IDF ────────────────────────────────────────────────────────────
         print("  Building TF-IDF matrix…")
         X_train_tfidf = self.vectorizer.fit_transform(X_train_t)
-        X_test_tfidf  = self.vectorizer.transform(X_test_t)
+        X_test_tfidf = self.vectorizer.transform(X_test_t)
 
         # Append VADER features to TF-IDF matrix
-        X_train = sp.hstack([X_train_tfidf,
-                              sp.csr_matrix(X_vader_train)], format="csr")
-        X_test  = sp.hstack([X_test_tfidf,
-                              sp.csr_matrix(X_vader_test)],  format="csr")
+        X_train = sp.hstack([X_train_tfidf, sp.csr_matrix(X_vader_train)], format="csr")
+        X_test = sp.hstack([X_test_tfidf, sp.csr_matrix(X_vader_test)], format="csr")
 
         self.classes_ = sorted(np.unique(y))
         self.label_encoder.fit(self.classes_)
@@ -273,14 +288,18 @@ class SentimentAnalyser:
 
         for name, clf in self.models.items():
             cv_scores = cross_val_score(
-                clf, X_train, y_train, cv=cv,
-                scoring="f1_weighted", n_jobs=-1,
+                clf,
+                X_train,
+                y_train,
+                cv=cv,
+                scoring="f1_weighted",
+                n_jobs=-1,
             )
             mean_f1 = cv_scores.mean()
             results[name] = mean_f1
             print(f"    {name:<25}  F1={mean_f1:.4f}  (±{cv_scores.std():.4f})")
             if mean_f1 > best_score:
-                best_score      = mean_f1
+                best_score = mean_f1
                 self.best_model = clf
                 self.best_model_name = name
 
@@ -290,11 +309,11 @@ class SentimentAnalyser:
         self.best_model.fit(X_train, y_train)
 
         # ── Store test data for evaluation ────────────────────────────────────
-        self._X_test        = X_test
-        self._X_test_text   = X_test_t
-        self._X_vader_test  = X_vader_test
-        self._y_test        = y_test
-        self._is_fitted     = True
+        self._X_test = X_test
+        self._X_test_text = X_test_t
+        self._X_vader_test = X_vader_test
+        self._y_test = y_test
+        self._is_fitted = True
 
         # ── Evaluate ──────────────────────────────────────────────────────────
         self._evaluate()
@@ -302,23 +321,20 @@ class SentimentAnalyser:
 
     # ── Evaluation ────────────────────────────────────────────────────────────
     def _evaluate(self) -> None:
-        y_pred_ml   = self.best_model.predict(self._X_test)
-        y_pred_ens  = self._ensemble_predict_labels(
-            self._X_test, self._X_vader_test
-        )
+        y_pred_ml = self.best_model.predict(self._X_test)
+        y_pred_ens = self._ensemble_predict_labels(self._X_test, self._X_vader_test)
 
-        print("\n" + "─"*60)
+        print("\n" + "─" * 60)
         print(f"  TEST SET RESULTS  ({len(self._y_test):,} samples)")
-        print("─"*60)
+        print("─" * 60)
 
         for name, preds in [
-            ("VADER alone",     [vader_label(v, self.mode)
-                                 for v in self._X_vader_test[:, 0]]),
+            ("VADER alone", [vader_label(v, self.mode) for v in self._X_vader_test[:, 0]]),
             (self.best_model_name, y_pred_ml),
-            ("Ensemble",        y_pred_ens),
+            ("Ensemble", y_pred_ens),
         ]:
             acc = accuracy_score(self._y_test, preds)
-            f1  = f1_score(self._y_test, preds, average="weighted")
+            f1 = f1_score(self._y_test, preds, average="weighted")
             print(f"  {name:<28}  Acc={acc:.4f}  F1={f1:.4f}")
 
         print("\n  Classification report (Ensemble):")
@@ -327,32 +343,41 @@ class SentimentAnalyser:
     # ── Confusion matrix plot ─────────────────────────────────────────────────
     def plot_confusion_matrix(self, save_path: str = "confusion_matrix.png") -> None:
         y_pred = self._ensemble_predict_labels(self._X_test, self._X_vader_test)
-        cm     = confusion_matrix(self._y_test, y_pred, labels=self.classes_)
+        cm = confusion_matrix(self._y_test, y_pred, labels=self.classes_)
 
         fig, ax = plt.subplots(figsize=(6, 5))
         sns.heatmap(
-            cm, annot=True, fmt="d", cmap="YlOrRd",
-            xticklabels=self.classes_, yticklabels=self.classes_,
-            linewidths=0.5, ax=ax, annot_kws={"size": 13},
+            cm,
+            annot=True,
+            fmt="d",
+            cmap="YlOrRd",
+            xticklabels=self.classes_,
+            yticklabels=self.classes_,
+            linewidths=0.5,
+            ax=ax,
+            annot_kws={"size": 13},
         )
         ax.set_xlabel("Predicted", fontsize=11)
-        ax.set_ylabel("Actual",    fontsize=11)
-        ax.set_title(f"Confusion Matrix — Ensemble\n({self.best_model_name} + VADER)",
-                     fontweight="bold")
+        ax.set_ylabel("Actual", fontsize=11)
+        ax.set_title(
+            f"Confusion Matrix — Ensemble\n({self.best_model_name} + VADER)", fontweight="bold"
+        )
         plt.tight_layout()
         plt.savefig(save_path, dpi=130, bbox_inches="tight")
         plt.close()
         print(f"  Saved → {save_path}")
 
     # ── Score distribution plot ───────────────────────────────────────────────
-    def plot_score_distribution(self, df_sample: pd.DataFrame,
-                                text_col: str = "review_text",
-                                save_path: str = "score_dist.png") -> None:
+    def plot_score_distribution(
+        self,
+        df_sample: pd.DataFrame,
+        text_col: str = "review_text",
+        save_path: str = "score_dist.png",
+    ) -> None:
         df_sample = add_vader_features(df_sample.copy(), text_col)
         processed = df_sample[text_col].apply(preprocess).values
-        tfidf     = self.vectorizer.transform(processed)
-        vader_arr = df_sample[["vader_compound","vader_pos",
-                                "vader_neg","vader_neu"]].values
+        tfidf = self.vectorizer.transform(processed)
+        vader_arr = df_sample[["vader_compound", "vader_pos", "vader_neg", "vader_neu"]].values
         X = sp.hstack([tfidf, sp.csr_matrix(vader_arr)], format="csr")
         proba = self.best_model.predict_proba(X)
 
@@ -366,48 +391,46 @@ class SentimentAnalyser:
             ax.set_title(f'P("{cls}")', fontweight="bold")
             ax.set_xlabel("Predicted probability")
             ax.set_ylabel("Reviews")
-        plt.suptitle("ML Model Probability Distributions", fontsize=13,
-                     fontweight="bold", y=1.02)
+        plt.suptitle("ML Model Probability Distributions", fontsize=13, fontweight="bold", y=1.02)
         plt.tight_layout()
         plt.savefig(save_path, dpi=130, bbox_inches="tight")
         plt.close()
         print(f"  Saved → {save_path}")
 
     # ── Top features plot ─────────────────────────────────────────────────────
-    def plot_top_features(self, top_n: int = 20,
-                          save_path: str = "top_features.png") -> None:
+    def plot_top_features(self, top_n: int = 20, save_path: str = "top_features.png") -> None:
         """Show the words with the highest LR coefficients per class."""
         if self.best_model_name != "Logistic Regression":
             print("  Feature plot only available for Logistic Regression.")
             return
-        clf        = self.best_model
+        clf = self.best_model
         feat_names = np.array(self.vectorizer.get_feature_names_out())
         # Vader features appended at the end
-        vader_names = np.array(["vader_compound","vader_pos","vader_neg","vader_neu"])
-        all_names   = np.concatenate([feat_names, vader_names])
+        vader_names = np.array(["vader_compound", "vader_pos", "vader_neg", "vader_neu"])
+        all_names = np.concatenate([feat_names, vader_names])
 
         n_classes = len(clf.classes_)
-        coef      = clf.coef_   # shape: (n_classes, n_features)
+        coef = clf.coef_  # shape: (n_classes, n_features)
 
         fig, axes = plt.subplots(1, n_classes, figsize=(8 * n_classes, 6))
         if n_classes == 1:
             axes = [axes]
 
         for ax, cls, c in zip(axes, clf.classes_, coef):
-            top_idx   = c.argsort()[-top_n:][::-1]
-            bot_idx   = c.argsort()[:top_n]
-            idx       = np.concatenate([top_idx, bot_idx])
-            vals      = c[idx]
-            colors    = [PALETTE["positive"] if v > 0 else PALETTE["negative"]
-                         for v in vals]
+            top_idx = c.argsort()[-top_n:][::-1]
+            bot_idx = c.argsort()[:top_n]
+            idx = np.concatenate([top_idx, bot_idx])
+            vals = c[idx]
+            colors = [PALETTE["positive"] if v > 0 else PALETTE["negative"] for v in vals]
             ax.barh(all_names[idx], vals, color=colors, alpha=0.85, edgecolor="white")
             ax.axvline(0, color="grey", linewidth=0.8)
             ax.set_title(f'Top features → "{cls}"', fontweight="bold")
             ax.set_xlabel("LR coefficient")
             ax.invert_yaxis()
 
-        plt.suptitle("Most Important Words per Sentiment Class",
-                     fontsize=13, fontweight="bold", y=1.01)
+        plt.suptitle(
+            "Most Important Words per Sentiment Class", fontsize=13, fontweight="bold", y=1.01
+        )
         plt.tight_layout()
         plt.savefig(save_path, dpi=130, bbox_inches="tight")
         plt.close()
@@ -423,15 +446,15 @@ class SentimentAnalyser:
         Weighted average of ML model probabilities + VADER-derived probabilities.
         VADER compound → soft probabilities via sigmoid-like mapping.
         """
-        ml_proba = self.best_model.predict_proba(X_combined)   # (N, n_classes)
+        ml_proba = self.best_model.predict_proba(X_combined)  # (N, n_classes)
 
         # Map VADER compound to class probabilities
-        compounds = vader_arr[:, 0]   # shape (N,)
+        compounds = vader_arr[:, 0]  # shape (N,)
         n = len(compounds)
 
         if self.mode == "binary":
             # classes = ["negative", "positive"]
-            p_pos = (compounds + 1) / 2          # map [-1,1] → [0,1]
+            p_pos = (compounds + 1) / 2  # map [-1,1] → [0,1]
             p_neg = 1 - p_pos
             vader_proba = np.column_stack([p_neg, p_pos])
             # reorder to match self.classes_
@@ -446,12 +469,12 @@ class SentimentAnalyser:
 
         # Weighted average
         w_vader = self.ensemble_weight
-        w_ml    = 1 - w_vader
+        w_ml = 1 - w_vader
         return w_ml * ml_proba + w_vader * vader_proba
 
     def _ensemble_predict_labels(self, X_combined, vader_arr) -> np.ndarray:
         proba = self._ensemble_predict_proba(X_combined, vader_arr)
-        idx   = np.argmax(proba, axis=1)
+        idx = np.argmax(proba, axis=1)
         return np.array(self.classes_)[idx]
 
     # ── Public: predict on new text ───────────────────────────────────────────
@@ -463,41 +486,38 @@ class SentimentAnalyser:
         assert self._is_fitted, "Call fit() first."
 
         # VADER
-        vs      = vader_score(text)
+        vs = vader_score(text)
         v_label = vader_label(vs["compound"], self.mode)
 
         # ML model
         processed = preprocess(text)
-        tfidf     = self.vectorizer.transform([processed])
-        vader_arr = np.array([[vs["compound"], vs["pos"],
-                               vs["neg"],      vs["neu"]]])
+        tfidf = self.vectorizer.transform([processed])
+        vader_arr = np.array([[vs["compound"], vs["pos"], vs["neg"], vs["neu"]]])
         X_combined = sp.hstack([tfidf, sp.csr_matrix(vader_arr)], format="csr")
 
-        ml_label  = self.best_model.predict(X_combined)[0]
-        ml_proba  = self.best_model.predict_proba(X_combined)[0]
+        ml_label = self.best_model.predict(X_combined)[0]
+        ml_proba = self.best_model.predict_proba(X_combined)[0]
 
         # Ensemble
         ens_proba = self._ensemble_predict_proba(X_combined, vader_arr)[0]
         ens_label = self.classes_[np.argmax(ens_proba)]
 
         return {
-            "text":           text[:120] + ("…" if len(text) > 120 else ""),
+            "text": text[:120] + ("…" if len(text) > 120 else ""),
             "vader": {
                 "compound": round(vs["compound"], 4),
                 "positive": round(vs["pos"], 4),
                 "negative": round(vs["neg"], 4),
-                "label":    v_label,
+                "label": v_label,
             },
             "ml_model": {
-                "name":   self.best_model_name,
-                "label":  ml_label,
-                "probas": {cls: round(p, 4)
-                           for cls, p in zip(self.best_model.classes_, ml_proba)},
+                "name": self.best_model_name,
+                "label": ml_label,
+                "probas": {cls: round(p, 4) for cls, p in zip(self.best_model.classes_, ml_proba)},
             },
             "ensemble": {
-                "label":  ens_label,
-                "probas": {cls: round(p, 4)
-                           for cls, p in zip(self.classes_, ens_proba)},
+                "label": ens_label,
+                "probas": {cls: round(p, 4) for cls, p in zip(self.classes_, ens_proba)},
             },
         }
 
@@ -511,20 +531,23 @@ class SentimentAnalyser:
             return results
         rows = []
         for r in results:
-            rows.append({
-                "text":            r["text"],
-                "vader_label":     r["vader"]["label"],
-                "vader_compound":  r["vader"]["compound"],
-                "ml_label":        r["ml_model"]["label"],
-                "ensemble_label":  r["ensemble"]["label"],
-                **{f"p_{cls}": p for cls, p in r["ensemble"]["probas"].items()},
-            })
+            rows.append(
+                {
+                    "text": r["text"],
+                    "vader_label": r["vader"]["label"],
+                    "vader_compound": r["vader"]["compound"],
+                    "ml_label": r["ml_model"]["label"],
+                    "ensemble_label": r["ensemble"]["label"],
+                    **{f"p_{cls}": p for cls, p in r["ensemble"]["probas"].items()},
+                }
+            )
         return pd.DataFrame(rows)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 5.  PRETTY PRINT HELPER
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 def print_prediction(result: dict) -> None:
     sep = "─" * 58
@@ -534,18 +557,24 @@ def print_prediction(result: dict) -> None:
     print(sep)
 
     v = result["vader"]
-    print(f"  VADER       → {bars.get(v['label'],'⚪')} {v['label'].upper():<10}"
-          f"  compound: {v['compound']:+.4f}")
+    print(
+        f"  VADER       → {bars.get(v['label'],'⚪')} {v['label'].upper():<10}"
+        f"  compound: {v['compound']:+.4f}"
+    )
 
     m = result["ml_model"]
     p = m["probas"]
-    print(f"  {m['name'][:20]:<20}→ {bars.get(m['label'],'⚪')} {m['label'].upper():<10}"
-          f"  " + "  ".join(f"{cls}: {prob:.3f}" for cls, prob in p.items()))
+    print(
+        f"  {m['name'][:20]:<20}→ {bars.get(m['label'],'⚪')} {m['label'].upper():<10}"
+        f"  " + "  ".join(f"{cls}: {prob:.3f}" for cls, prob in p.items())
+    )
 
     e = result["ensemble"]
     ep = e["probas"]
-    print(f"  ENSEMBLE    → {bars.get(e['label'],'⚪')} {e['label'].upper():<10}"
-          f"  " + "  ".join(f"{cls}: {prob:.3f}" for cls, prob in ep.items()))
+    print(
+        f"  ENSEMBLE    → {bars.get(e['label'],'⚪')} {e['label'].upper():<10}"
+        f"  " + "  ".join(f"{cls}: {prob:.3f}" for cls, prob in ep.items())
+    )
     print(sep)
 
 
@@ -624,8 +653,11 @@ if __name__ == "__main__":
     # ── Batch prediction ──────────────────────────────────────────────────────
     print("\n\nBATCH PREDICTION (DataFrame output):")
     batch_df = analyser.predict_batch(test_reviews)
-    print(batch_df[["text","vader_label","ml_label",
-                     "ensemble_label","p_positive","p_negative"]].to_string(index=False))
+    print(
+        batch_df[
+            ["text", "vader_label", "ml_label", "ensemble_label", "p_positive", "p_negative"]
+        ].to_string(index=False)
+    )
 
     print("\n\nHOW TO USE IN YOUR PROJECT:")
     print("─" * 50)

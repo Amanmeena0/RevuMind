@@ -18,33 +18,39 @@ Usage:
     result = pipeline.process("We are looking for a Python developer...")
 """
 
-import re
-import string
-import nltk
-import pandas as pd
-import numpy as np
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+import re
+import string
+
+import nltk
+import numpy as np
+import pandas as pd
 
 # Scikit-learn for TF-IDF keyword extraction
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 # ── Download all required NLTK data ───────────────────────────────────────────
 NLTK_PACKAGES = [
-    "punkt", "punkt_tab", "stopwords", "wordnet",
-    "averaged_perceptron_tagger", "averaged_perceptron_tagger_eng",
-    "omw-1.4", "maxent_ne_chunker", "words",
+    "punkt",
+    "punkt_tab",
+    "stopwords",
+    "wordnet",
+    "averaged_perceptron_tagger",
+    "averaged_perceptron_tagger_eng",
+    "omw-1.4",
+    "maxent_ne_chunker",
+    "words",
 ]
 for pkg in NLTK_PACKAGES:
     nltk.download(pkg, quiet=True)
 
-from nltk.tokenize import word_tokenize, sent_tokenize, MWETokenizer
-from nltk.corpus import stopwords, wordnet
-from nltk.stem import WordNetLemmatizer, PorterStemmer
-from nltk.tag import pos_tag
 from nltk.chunk import ne_chunk
+from nltk.corpus import stopwords, wordnet
+from nltk.stem import PorterStemmer, WordNetLemmatizer
+from nltk.tag import pos_tag
+from nltk.tokenize import MWETokenizer, sent_tokenize, word_tokenize
 from nltk.util import ngrams as nltk_ngrams
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CONFIGURATION
@@ -53,16 +59,71 @@ from nltk.util import ngrams as nltk_ngrams
 # Standard English stopwords + job-description specific filler words
 CUSTOM_STOPWORDS = {
     # Generic job posting filler
-    "role", "position", "opportunity", "join", "team", "company", "looking",
-    "seeking", "candidate", "ideal", "must", "will", "able", "work", "working",
-    "experience", "knowledge", "strong", "good", "excellent", "great", "plus",
-    "preferred", "required", "requirement", "skill", "skills", "ability",
-    "responsibilities", "responsibility", "qualification", "qualifications",
-    "apply", "applicant", "employer", "employee", "employment", "hiring",
-    "year", "years", "month", "months", "day", "days",
-    "etc", "eg", "ie", "also", "well", "like", "make", "get", "use",
-    "include", "including", "within", "across", "along", "based",
-    "provide", "support", "ensure", "help", "need", "want",
+    "role",
+    "position",
+    "opportunity",
+    "join",
+    "team",
+    "company",
+    "looking",
+    "seeking",
+    "candidate",
+    "ideal",
+    "must",
+    "will",
+    "able",
+    "work",
+    "working",
+    "experience",
+    "knowledge",
+    "strong",
+    "good",
+    "excellent",
+    "great",
+    "plus",
+    "preferred",
+    "required",
+    "requirement",
+    "skill",
+    "skills",
+    "ability",
+    "responsibilities",
+    "responsibility",
+    "qualification",
+    "qualifications",
+    "apply",
+    "applicant",
+    "employer",
+    "employee",
+    "employment",
+    "hiring",
+    "year",
+    "years",
+    "month",
+    "months",
+    "day",
+    "days",
+    "etc",
+    "eg",
+    "ie",
+    "also",
+    "well",
+    "like",
+    "make",
+    "get",
+    "use",
+    "include",
+    "including",
+    "within",
+    "across",
+    "along",
+    "based",
+    "provide",
+    "support",
+    "ensure",
+    "help",
+    "need",
+    "want",
 }
 
 BASE_STOPWORDS = set(stopwords.words("english")) | CUSTOM_STOPWORDS
@@ -70,36 +131,123 @@ BASE_STOPWORDS = set(stopwords.words("english")) | CUSTOM_STOPWORDS
 # ── Tech skills taxonomy ───────────────────────────────────────────────────────
 TECH_SKILLS = {
     "languages": {
-        "python", "java", "javascript", "typescript", "scala", "r", "go",
-        "golang", "rust", "c++", "c#", "kotlin", "swift", "ruby", "php",
-        "bash", "shell", "perl", "matlab", "julia",
+        "python",
+        "java",
+        "javascript",
+        "typescript",
+        "scala",
+        "r",
+        "go",
+        "golang",
+        "rust",
+        "c++",
+        "c#",
+        "kotlin",
+        "swift",
+        "ruby",
+        "php",
+        "bash",
+        "shell",
+        "perl",
+        "matlab",
+        "julia",
     },
     "ml_ai": {
-        "machine learning", "deep learning", "neural network", "nlp",
-        "computer vision", "reinforcement learning", "transfer learning",
-        "natural language processing", "large language model", "llm",
-        "generative ai", "diffusion model", "transformer",
+        "machine learning",
+        "deep learning",
+        "neural network",
+        "nlp",
+        "computer vision",
+        "reinforcement learning",
+        "transfer learning",
+        "natural language processing",
+        "large language model",
+        "llm",
+        "generative ai",
+        "diffusion model",
+        "transformer",
     },
     "frameworks": {
-        "tensorflow", "pytorch", "keras", "scikit-learn", "sklearn",
-        "xgboost", "lightgbm", "catboost", "hugging face", "spacy",
-        "nltk", "opencv", "fastapi", "flask", "django", "spark", "hadoop",
-        "kafka", "airflow", "dbt", "react", "angular", "vue", "node",
+        "tensorflow",
+        "pytorch",
+        "keras",
+        "scikit-learn",
+        "sklearn",
+        "xgboost",
+        "lightgbm",
+        "catboost",
+        "hugging face",
+        "spacy",
+        "nltk",
+        "opencv",
+        "fastapi",
+        "flask",
+        "django",
+        "spark",
+        "hadoop",
+        "kafka",
+        "airflow",
+        "dbt",
+        "react",
+        "angular",
+        "vue",
+        "node",
     },
     "data": {
-        "pandas", "numpy", "sql", "nosql", "mongodb", "postgresql", "mysql",
-        "sqlite", "redis", "elasticsearch", "tableau", "power bi", "looker",
-        "excel", "spark", "hive", "presto", "databricks", "snowflake",
+        "pandas",
+        "numpy",
+        "sql",
+        "nosql",
+        "mongodb",
+        "postgresql",
+        "mysql",
+        "sqlite",
+        "redis",
+        "elasticsearch",
+        "tableau",
+        "power bi",
+        "looker",
+        "excel",
+        "spark",
+        "hive",
+        "presto",
+        "databricks",
+        "snowflake",
     },
     "cloud_devops": {
-        "aws", "gcp", "azure", "docker", "kubernetes", "ci/cd", "git",
-        "github", "gitlab", "jenkins", "terraform", "ansible", "linux",
-        "unix", "mlops", "devops", "microservices", "rest", "api",
+        "aws",
+        "gcp",
+        "azure",
+        "docker",
+        "kubernetes",
+        "ci/cd",
+        "git",
+        "github",
+        "gitlab",
+        "jenkins",
+        "terraform",
+        "ansible",
+        "linux",
+        "unix",
+        "mlops",
+        "devops",
+        "microservices",
+        "rest",
+        "api",
     },
     "soft_skills": {
-        "communication", "collaboration", "leadership", "problem solving",
-        "analytical", "critical thinking", "teamwork", "agile", "scrum",
-        "project management", "mentoring", "presentation",
+        "communication",
+        "collaboration",
+        "leadership",
+        "problem solving",
+        "analytical",
+        "critical thinking",
+        "teamwork",
+        "agile",
+        "scrum",
+        "project management",
+        "mentoring",
+        "presentation",
     },
 }
 
@@ -111,28 +259,30 @@ ALL_SKILLS_FLAT = {skill for category in TECH_SKILLS.values() for skill in categ
 # DATA CLASS — output of one processed document
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 @dataclass
 class ProcessedDocument:
-    original_text:     str
-    clean_text:        str
-    sentences:         list[str]          = field(default_factory=list)
-    tokens_raw:        list[str]          = field(default_factory=list)
-    tokens_clean:      list[str]          = field(default_factory=list)
-    tokens_lemmatized: list[str]          = field(default_factory=list)
-    tokens_stemmed:    list[str]          = field(default_factory=list)
-    pos_tags:          list[tuple]        = field(default_factory=list)
-    bigrams:           list[tuple]        = field(default_factory=list)
-    trigrams:          list[tuple]        = field(default_factory=list)
-    freq_keywords:     list[tuple]        = field(default_factory=list)
-    rake_keywords:     list[tuple]        = field(default_factory=list)
-    skills_found:      dict               = field(default_factory=dict)
-    noun_phrases:      list[str]          = field(default_factory=list)
-    processed_string:  str               = ""   # rejoined lemmatized tokens
+    original_text: str
+    clean_text: str
+    sentences: list[str] = field(default_factory=list)
+    tokens_raw: list[str] = field(default_factory=list)
+    tokens_clean: list[str] = field(default_factory=list)
+    tokens_lemmatized: list[str] = field(default_factory=list)
+    tokens_stemmed: list[str] = field(default_factory=list)
+    pos_tags: list[tuple] = field(default_factory=list)
+    bigrams: list[tuple] = field(default_factory=list)
+    trigrams: list[tuple] = field(default_factory=list)
+    freq_keywords: list[tuple] = field(default_factory=list)
+    rake_keywords: list[tuple] = field(default_factory=list)
+    skills_found: dict = field(default_factory=dict)
+    noun_phrases: list[str] = field(default_factory=list)
+    processed_string: str = ""  # rejoined lemmatized tokens
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PIPELINE CLASS
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class JobDescriptionPipeline:
     """
@@ -153,17 +303,17 @@ class JobDescriptionPipeline:
 
     def __init__(
         self,
-        stopwords:       set   = BASE_STOPWORDS,
-        min_token_len:   int   = 2,
-        max_token_len:   int   = 40,
-        use_stemmer:     bool  = False,   # stemmer = faster but lossy; lemmatizer = better
+        stopwords: set = BASE_STOPWORDS,
+        min_token_len: int = 2,
+        max_token_len: int = 40,
+        use_stemmer: bool = False,  # stemmer = faster but lossy; lemmatizer = better
     ):
-        self.stopwords     = stopwords
-        self.min_len       = min_token_len
-        self.max_len       = max_token_len
-        self.use_stemmer   = use_stemmer
-        self.lemmatizer    = WordNetLemmatizer()
-        self.stemmer       = PorterStemmer()
+        self.stopwords = stopwords
+        self.min_len = min_token_len
+        self.max_len = max_token_len
+        self.use_stemmer = use_stemmer
+        self.lemmatizer = WordNetLemmatizer()
+        self.stemmer = PorterStemmer()
 
     # ── Step 1: Text Cleaning ─────────────────────────────────────────────────
     def clean(self, text: str) -> str:
@@ -175,13 +325,13 @@ class JobDescriptionPipeline:
             return ""
 
         text = text.lower()
-        text = re.sub(r"http\S+|www\.\S+", " ", text)          # remove URLs
-        text = re.sub(r"<[^>]+>", " ", text)                    # strip HTML tags
-        text = re.sub(r"[^\w\s\.\,\+\#]", " ", text)           # keep . , + # (for C#, C++)
-        text = re.sub(r"c\+\+", "cpp", text)                    # normalise C++
-        text = re.sub(r"c#", "csharp", text)                    # normalise C#
-        text = re.sub(r"\b\d+\+?\s*years?\b", " ", text)        # remove "5 years", "3+ years"
-        text = re.sub(r"\s+", " ", text).strip()                # collapse whitespace
+        text = re.sub(r"http\S+|www\.\S+", " ", text)  # remove URLs
+        text = re.sub(r"<[^>]+>", " ", text)  # strip HTML tags
+        text = re.sub(r"[^\w\s\.\,\+\#]", " ", text)  # keep . , + # (for C#, C++)
+        text = re.sub(r"c\+\+", "cpp", text)  # normalise C++
+        text = re.sub(r"c#", "csharp", text)  # normalise C#
+        text = re.sub(r"\b\d+\+?\s*years?\b", " ", text)  # remove "5 years", "3+ years"
+        text = re.sub(r"\s+", " ", text).strip()  # collapse whitespace
         return text
 
     # ── Step 2: Sentence Tokenization ────────────────────────────────────────
@@ -205,7 +355,8 @@ class JobDescriptionPipeline:
         Length filter removes single chars and very long tokens (likely noise).
         """
         return [
-            t for t in tokens
+            t
+            for t in tokens
             if t not in self.stopwords
             and t not in string.punctuation
             and self.min_len <= len(t) <= self.max_len
@@ -232,7 +383,7 @@ class JobDescriptionPipeline:
         elif treebank_tag.startswith("R"):
             return wordnet.ADV
         else:
-            return wordnet.NOUN   # default
+            return wordnet.NOUN  # default
 
     def lemmatize(self, pos_tagged: list[tuple[str, str]]) -> list[str]:
         """
@@ -243,8 +394,7 @@ class JobDescriptionPipeline:
         Without POS: lemmatizer defaults to noun and misses verb forms.
         """
         return [
-            self.lemmatizer.lemmatize(token, self._wordnet_pos(tag))
-            for token, tag in pos_tagged
+            self.lemmatizer.lemmatize(token, self._wordnet_pos(tag)) for token, tag in pos_tagged
         ]
 
     def stem(self, tokens: list[str]) -> list[str]:
@@ -302,8 +452,8 @@ class JobDescriptionPipeline:
           Phrases that co-occur with many other words get high scores.
         """
         # Split into candidate phrases at stopword/punctuation boundaries
-        splitter  = re.compile(r"[\s\-\–\,\.\;\:\!\?\(\)\[\]\{\}\"\']+")
-        stop_pat  = re.compile(
+        splitter = re.compile(r"[\s\-\–\,\.\;\:\!\?\(\)\[\]\{\}\"\']+")
+        stop_pat = re.compile(
             r"\b(" + "|".join(re.escape(w) for w in self.stopwords) + r")\b",
             re.IGNORECASE,
         )
@@ -314,8 +464,7 @@ class JobDescriptionPipeline:
             phrases = stop_pat.split(sent)
             for phrase in phrases:
                 phrase = phrase.strip()
-                words  = [w for w in splitter.split(phrase)
-                          if w and w not in string.punctuation]
+                words = [w for w in splitter.split(phrase) if w and w not in string.punctuation]
                 if min_words <= len(words) <= max_words:
                     candidates.append(words)
 
@@ -323,23 +472,20 @@ class JobDescriptionPipeline:
             return []
 
         # Build word frequency and degree matrices
-        word_freq   = Counter()
+        word_freq = Counter()
         word_degree = Counter()
         for phrase in candidates:
             for word in phrase:
-                word_freq[word]   += 1
-                word_degree[word] += len(phrase) - 1   # co-occurrences
+                word_freq[word] += 1
+                word_degree[word] += len(phrase) - 1  # co-occurrences
 
         # Word score = freq / (freq + degree)  (Brin & Page variant)
-        word_score = {
-            w: word_freq[w] / (word_freq[w] + word_degree[w] + 1e-9)
-            for w in word_freq
-        }
+        word_score = {w: word_freq[w] / (word_freq[w] + word_degree[w] + 1e-9) for w in word_freq}
 
         # Phrase score = sum of word scores
         phrase_scores = {}
         for phrase in candidates:
-            phrase_str   = " ".join(phrase)
+            phrase_str = " ".join(phrase)
             phrase_score = sum(word_score.get(w, 0) for w in phrase)
             if phrase_str not in phrase_scores:
                 phrase_scores[phrase_str] = phrase_score
@@ -357,7 +503,7 @@ class JobDescriptionPipeline:
         text_lower = text.lower()
         found = defaultdict(list)
         for category, skills in TECH_SKILLS.items():
-            for skill in sorted(skills):   # sorted for consistent output
+            for skill in sorted(skills):  # sorted for consistent output
                 # Use word-boundary match to avoid partial matches (e.g. 'r' in 'learning')
                 if len(skill) <= 2:
                     # Short skills: exact word match only
@@ -379,15 +525,15 @@ class JobDescriptionPipeline:
             NP: {<DT>?<JJ.*>*<NN.*>+}   # Det? + Adj* + Noun+
                 {<NNP>+}                  # Proper nouns
         """
-        cp     = nltk.RegexpParser(grammar)
-        tree   = cp.parse(pos_tagged)
+        cp = nltk.RegexpParser(grammar)
+        tree = cp.parse(pos_tagged)
         phrases = []
         for subtree in tree.subtrees():
             if subtree.label() == "NP":
                 phrase = " ".join(word for word, tag in subtree.leaves())
-                if len(phrase.split()) >= 2:   # only multi-word phrases
+                if len(phrase.split()) >= 2:  # only multi-word phrases
                     phrases.append(phrase)
-        return list(dict.fromkeys(phrases))   # deduplicate, preserve order
+        return list(dict.fromkeys(phrases))  # deduplicate, preserve order
 
     # ── Master process() method ───────────────────────────────────────────────
     def process(self, text: str) -> ProcessedDocument:
@@ -401,7 +547,7 @@ class JobDescriptionPipeline:
         doc.clean_text = self.clean(text)
 
         # 2. Sentence tokenize
-        doc.sentences  = self.sent_tokenize(doc.clean_text)
+        doc.sentences = self.sent_tokenize(doc.clean_text)
 
         # 3. Word tokenize
         doc.tokens_raw = self.word_tokenize(doc.clean_text)
@@ -421,7 +567,7 @@ class JobDescriptionPipeline:
 
         # 7. n-grams
         grams = self.extract_ngrams(doc.tokens_lemmatized)
-        doc.bigrams  = grams.get(2, [])
+        doc.bigrams = grams.get(2, [])
         doc.trigrams = grams.get(3, [])
 
         # 8. Keywords
@@ -444,8 +590,9 @@ class JobDescriptionPipeline:
 # BATCH PROCESSOR — run pipeline on a full DataFrame
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def process_dataframe(
-    df:       pd.DataFrame,
+    df: pd.DataFrame,
     text_col: str = "job_description",
     pipeline: JobDescriptionPipeline = None,
 ) -> pd.DataFrame:
@@ -470,21 +617,23 @@ def process_dataframe(
     results = []
     for i, text in enumerate(df[text_col].fillna("")):
         doc = pipeline.process(text)
-        results.append({
-            "processed_text":    doc.processed_string,
-            "top_keywords":      ", ".join(kw for kw, _ in doc.freq_keywords[:10]),
-            "skills_languages":  ", ".join(doc.skills_found.get("languages", [])),
-            "skills_ml_ai":      ", ".join(doc.skills_found.get("ml_ai", [])),
-            "skills_frameworks": ", ".join(doc.skills_found.get("frameworks", [])),
-            "skills_data":       ", ".join(doc.skills_found.get("data", [])),
-            "skills_cloud":      ", ".join(doc.skills_found.get("cloud_devops", [])),
-            "soft_skills":       ", ".join(doc.skills_found.get("soft_skills", [])),
-            "noun_phrases":      " | ".join(doc.noun_phrases[:8]),
-            "token_count":       len(doc.tokens_clean),
-            "sentence_count":    len(doc.sentences),
-            "skill_count":       sum(len(v) for v in doc.skills_found.values()),
-            "bigram_count":      len(doc.bigrams),
-        })
+        results.append(
+            {
+                "processed_text": doc.processed_string,
+                "top_keywords": ", ".join(kw for kw, _ in doc.freq_keywords[:10]),
+                "skills_languages": ", ".join(doc.skills_found.get("languages", [])),
+                "skills_ml_ai": ", ".join(doc.skills_found.get("ml_ai", [])),
+                "skills_frameworks": ", ".join(doc.skills_found.get("frameworks", [])),
+                "skills_data": ", ".join(doc.skills_found.get("data", [])),
+                "skills_cloud": ", ".join(doc.skills_found.get("cloud_devops", [])),
+                "soft_skills": ", ".join(doc.skills_found.get("soft_skills", [])),
+                "noun_phrases": " | ".join(doc.noun_phrases[:8]),
+                "token_count": len(doc.tokens_clean),
+                "sentence_count": len(doc.sentences),
+                "skill_count": sum(len(v) for v in doc.skills_found.values()),
+                "bigram_count": len(doc.bigrams),
+            }
+        )
         if (i + 1) % 100 == 0:
             print(f"  {i+1}/{len(df)} done…")
 
@@ -496,10 +645,11 @@ def process_dataframe(
 # TF-IDF KEYWORD EXTRACTION — across a corpus of job descriptions
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def extract_tfidf_keywords(
     processed_texts: list[str],
-    top_n_per_doc:   int = 10,
-    max_features:    int = 3000,
+    top_n_per_doc: int = 10,
+    max_features: int = 3000,
 ) -> list[list[tuple[str, float]]]:
     """
     TF-IDF keyword extraction across the whole corpus.
@@ -508,11 +658,11 @@ def extract_tfidf_keywords(
     Returns a list of (keyword, score) lists, one per document.
     """
     vectorizer = TfidfVectorizer(
-        max_features = max_features,
-        ngram_range  = (1, 2),
-        min_df       = 2,
-        max_df       = 0.85,
-        sublinear_tf = True,
+        max_features=max_features,
+        ngram_range=(1, 2),
+        min_df=2,
+        max_df=0.85,
+        sublinear_tf=True,
     )
     tfidf_matrix = vectorizer.fit_transform(processed_texts)
     feature_names = vectorizer.get_feature_names_out()
@@ -521,8 +671,9 @@ def extract_tfidf_keywords(
     for i in range(tfidf_matrix.shape[0]):
         row = tfidf_matrix[i].toarray().flatten()
         top_indices = row.argsort()[::-1][:top_n_per_doc]
-        keywords = [(feature_names[idx], round(row[idx], 4))
-                    for idx in top_indices if row[idx] > 0]
+        keywords = [
+            (feature_names[idx], round(row[idx], 4)) for idx in top_indices if row[idx] > 0
+        ]
         results.append(keywords)
     return results
 
@@ -530,6 +681,7 @@ def extract_tfidf_keywords(
 # ══════════════════════════════════════════════════════════════════════════════
 # PRETTY PRINTER
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 def print_doc_results(doc: ProcessedDocument, max_items: int = 12) -> None:
     """Print every step of the pipeline output in a readable format."""
@@ -656,13 +808,20 @@ if __name__ == "__main__":
     print("\nLEMMATIZATION vs STEMMING comparison:")
     print("─" * 50)
     test_words = [
-        ("running",   "VBG"), ("studies",  "NNS"), ("better",  "JJR"),
-        ("developers","NNS"), ("building", "VBG"), ("analyses","NNS"),
-        ("configured","VBD"), ("training", "VBG"), ("deployed","VBD"),
+        ("running", "VBG"),
+        ("studies", "NNS"),
+        ("better", "JJR"),
+        ("developers", "NNS"),
+        ("building", "VBG"),
+        ("analyses", "NNS"),
+        ("configured", "VBD"),
+        ("training", "VBG"),
+        ("deployed", "VBD"),
     ]
-    lem = WordNetLemmatizer(); stem = PorterStemmer()
+    lem = WordNetLemmatizer()
+    stem = PorterStemmer()
     print(f"  {'Original':<15} {'Lemmatized':<15} {'Stemmed':<15}")
-    print("  " + "─"*42)
+    print("  " + "─" * 42)
     for word, pos in test_words:
         wn_pos = JobDescriptionPipeline._wordnet_pos(pos)
         lemmed = lem.lemmatize(word, wn_pos)
@@ -672,25 +831,32 @@ if __name__ == "__main__":
     # ── Batch process multiple job descriptions ────────────────────────────────
     print("\n\nBATCH PROCESSING DEMO:")
     print("─" * 50)
-    df_jobs = pd.DataFrame({
-        "job_id":          ["J001", "J002"],
-        "job_title":       ["Senior Data Scientist", "ML Engineer"],
-        "job_description": [SAMPLE_JD_1, SAMPLE_JD_2],
-    })
+    df_jobs = pd.DataFrame(
+        {
+            "job_id": ["J001", "J002"],
+            "job_title": ["Senior Data Scientist", "ML Engineer"],
+            "job_description": [SAMPLE_JD_1, SAMPLE_JD_2],
+        }
+    )
     df_processed = process_dataframe(df_jobs, text_col="job_description", pipeline=pipeline)
 
     print("\nExtracted columns per job:")
-    show_cols = ["job_title", "token_count", "sentence_count",
-                 "skill_count", "skills_languages", "skills_ml_ai",
-                 "skills_frameworks", "top_keywords"]
+    show_cols = [
+        "job_title",
+        "token_count",
+        "sentence_count",
+        "skill_count",
+        "skills_languages",
+        "skills_ml_ai",
+        "skills_frameworks",
+        "top_keywords",
+    ]
     print(df_processed[show_cols].to_string(index=False))
 
     # ── TF-IDF keywords across corpus ─────────────────────────────────────────
     print("\n\nTF-IDF KEYWORDS (corpus-level):")
     print("─" * 50)
-    tfidf_kws = extract_tfidf_keywords(
-        df_processed["processed_text"].tolist(), top_n_per_doc=8
-    )
+    tfidf_kws = extract_tfidf_keywords(df_processed["processed_text"].tolist(), top_n_per_doc=8)
     for title, kws in zip(df_jobs["job_title"], tfidf_kws):
         print(f"\n  {title}:")
         for kw, score in kws:

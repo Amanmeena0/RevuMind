@@ -6,6 +6,7 @@ Supports environment configurations via DATABASE_URL.
 """
 
 import os
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
@@ -20,9 +21,9 @@ if DATABASE_URL.startswith("sqlite"):
 
 # Initialize engine
 engine = create_engine(
-    DATABASE_URL, 
+    DATABASE_URL,
     connect_args=connect_args,
-    pool_pre_ping=True  # Detect and recover from stale connections
+    pool_pre_ping=True,  # Detect and recover from stale connections
 )
 
 # Session factory
@@ -30,6 +31,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Declarative base class for models
 Base = declarative_base()
+
 
 def get_db():
     """

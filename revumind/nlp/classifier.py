@@ -24,44 +24,55 @@ Usage:
     result = clf.predict("The box arrived completely crushed!")
 """
 
-import re, warnings, json
+import json
+import re
+import warnings
+
+import matplotlib
 import numpy as np
 import pandas as pd
-import matplotlib
+
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import seaborn as sns
 from collections import Counter
 
-from revumind.utils.constants import STOP_WORDS, PALETTE, configure_plotting
+import matplotlib.pyplot as plt
+import seaborn as sns
+
 from revumind.data.synthetic import generate_review_data
+from revumind.utils.constants import PALETTE, STOP_WORDS, configure_plotting
 
 warnings.filterwarnings("ignore")
 
 # ── NLTK ──────────────────────────────────────────────────────────────────────
 import nltk
+
 for p in ["stopwords", "wordnet", "punkt"]:
     nltk.download(p, quiet=True)
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.ensemble import RandomForestClassifier
 
 # ── Scikit-learn ──────────────────────────────────────────────────────────────
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.naive_bayes import MultinomialNB
-from sklearn.svm import LinearSVC
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.calibration import CalibratedClassifierCV
-from sklearn.pipeline import Pipeline
-from sklearn.model_selection import (
-    train_test_split, cross_val_score,
-    StratifiedKFold, GridSearchCV,
-)
 from sklearn.metrics import (
-    classification_report, confusion_matrix,
-    roc_auc_score, accuracy_score, f1_score,
+    accuracy_score,
+    classification_report,
+    confusion_matrix,
+    f1_score,
+    roc_auc_score,
 )
+from sklearn.model_selection import (
+    GridSearchCV,
+    StratifiedKFold,
+    cross_val_score,
+    train_test_split,
+)
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import label_binarize
+from sklearn.svm import LinearSVC
 
 LEMMATIZER = WordNetLemmatizer()
 
@@ -74,11 +85,11 @@ CLASSES = [
     "delivery_service",
 ]
 CLASS_LABELS = {
-    "positive_praise":    "✅ Positive Praise",
+    "positive_praise": "✅ Positive Praise",
     "negative_complaint": "❌ Negative Complaint",
-    "feature_request":    "💡 Feature Request",
-    "quality_issue":      "⚠️  Quality Issue",
-    "delivery_service":   "🚚 Delivery / Service",
+    "feature_request": "💡 Feature Request",
+    "quality_issue": "⚠️  Quality Issue",
+    "delivery_service": "🚚 Delivery / Service",
 }
 
 configure_plotting()
@@ -88,14 +99,15 @@ configure_plotting()
 # 1.  TEXT PREPROCESSING
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def clean(text: str) -> str:
     if not isinstance(text, str):
         return ""
     text = text.lower()
     text = re.sub(r"http\S+|www\.\S+", " ", text)
-    text = re.sub(r"<[^>]+>",          " ", text)
-    text = re.sub(r"[^\w\s]",          " ", text)
-    text = re.sub(r"\d+",              " ", text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"[^\w\s]", " ", text)
+    text = re.sub(r"\d+", " ", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
@@ -110,6 +122,7 @@ def preprocess(text: str) -> str:
 # 2.  SYNTHETIC DATASET BUILDER
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def build_dataset(n: int = 800) -> pd.DataFrame:
     """
     Build a labelled multi-class review dataset using shared generator.
@@ -123,6 +136,7 @@ def build_dataset(n: int = 800) -> pd.DataFrame:
 # ══════════════════════════════════════════════════════════════════════════════
 # 3.  CLASSIFIER CLASS
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class ReviewClassifier:
     """
@@ -141,79 +155,114 @@ class ReviewClassifier:
 
     def __init__(
         self,
-        max_features: int   = 10_000,
-        ngram_range:  tuple = (1, 2),
-        C:            float = 1.0,
-        max_iter:     int   = 1000,
+        max_features: int = 10_000,
+        ngram_range: tuple = (1, 2),
+        C: float = 1.0,
+        max_iter: int = 1000,
     ):
         self.max_features = max_features
-        self.ngram_range  = ngram_range
-        self.C            = C
-        self.max_iter     = max_iter
-        self.classes_     = None
-        self._fitted      = False
+        self.ngram_range = ngram_range
+        self.C = C
+        self.max_iter = max_iter
+        self.classes_ = None
+        self._fitted = False
 
         # Scikit-learn Pipeline: vectoriser + classifier in one object
         # This ensures the SAME vectoriser is used for train and predict
-        self.pipeline = Pipeline([
-            ("tfidf", TfidfVectorizer(
-                max_features = max_features,
-                ngram_range  = ngram_range,
-                min_df       = 2,
-                max_df       = 0.95,
-                sublinear_tf = True,      # log(1 + tf) dampens high-freq terms
-                strip_accents = "unicode",
-                analyzer     = "word",
-            )),
-            ("clf", LogisticRegression(
-                C             = C,
-                max_iter      = max_iter,
-                class_weight  = "balanced",   # upweight rare categories
-                solver        = "lbfgs",
-                multi_class   = "multinomial",
-                random_state  = 42,
-            )),
-        ])
+        self.pipeline = Pipeline(
+            [
+                (
+                    "tfidf",
+                    TfidfVectorizer(
+                        max_features=max_features,
+                        ngram_range=ngram_range,
+                        min_df=2,
+                        max_df=0.95,
+                        sublinear_tf=True,  # log(1 + tf) dampens high-freq terms
+                        strip_accents="unicode",
+                        analyzer="word",
+                    ),
+                ),
+                (
+                    "clf",
+                    LogisticRegression(
+                        C=C,
+                        max_iter=max_iter,
+                        class_weight="balanced",  # upweight rare categories
+                        solver="lbfgs",
+                        multi_class="multinomial",
+                        random_state=42,
+                    ),
+                ),
+            ]
+        )
 
         # Comparison models (raw, not pipeline — for CV comparison only)
         self.comparison_models = {
             "Logistic Regression": self.pipeline,
-            "Naive Bayes": Pipeline([
-                ("tfidf", TfidfVectorizer(max_features=max_features,
-                                          ngram_range=ngram_range,
-                                          min_df=2, sublinear_tf=True)),
-                ("clf", MultinomialNB(alpha=0.1)),
-            ]),
-            "Linear SVC": Pipeline([
-                ("tfidf", TfidfVectorizer(max_features=max_features,
-                                          ngram_range=ngram_range,
-                                          min_df=2, sublinear_tf=True)),
-                ("clf", CalibratedClassifierCV(
-                    LinearSVC(C=1.0, max_iter=3000, class_weight="balanced")
-                )),
-            ]),
-            "Random Forest": Pipeline([
-                ("tfidf", TfidfVectorizer(max_features=3000,
-                                          ngram_range=(1,1),
-                                          min_df=2, sublinear_tf=True)),
-                ("clf", RandomForestClassifier(
-                    n_estimators=200, class_weight="balanced", random_state=42
-                )),
-            ]),
+            "Naive Bayes": Pipeline(
+                [
+                    (
+                        "tfidf",
+                        TfidfVectorizer(
+                            max_features=max_features,
+                            ngram_range=ngram_range,
+                            min_df=2,
+                            sublinear_tf=True,
+                        ),
+                    ),
+                    ("clf", MultinomialNB(alpha=0.1)),
+                ]
+            ),
+            "Linear SVC": Pipeline(
+                [
+                    (
+                        "tfidf",
+                        TfidfVectorizer(
+                            max_features=max_features,
+                            ngram_range=ngram_range,
+                            min_df=2,
+                            sublinear_tf=True,
+                        ),
+                    ),
+                    (
+                        "clf",
+                        CalibratedClassifierCV(
+                            LinearSVC(C=1.0, max_iter=3000, class_weight="balanced")
+                        ),
+                    ),
+                ]
+            ),
+            "Random Forest": Pipeline(
+                [
+                    (
+                        "tfidf",
+                        TfidfVectorizer(
+                            max_features=3000, ngram_range=(1, 1), min_df=2, sublinear_tf=True
+                        ),
+                    ),
+                    (
+                        "clf",
+                        RandomForestClassifier(
+                            n_estimators=200, class_weight="balanced", random_state=42
+                        ),
+                    ),
+                ]
+            ),
         }
 
     # ── Fit ───────────────────────────────────────────────────────────────────
     def fit(
         self,
-        df:        pd.DataFrame,
-        text_col:  str = "review_text",
+        df: pd.DataFrame,
+        text_col: str = "review_text",
         label_col: str = "category",
-        tune:      bool = False,
+        tune: bool = False,
     ) -> "ReviewClassifier":
 
-        print("\n" + "="*62)
+        print("\n" + "=" * 62)
         print("  TRAINING MULTI-CLASS REVIEW CLASSIFIER")
-        print("="*62)
+        print("=" * 62)
 
         # ── Preprocess ────────────────────────────────────────────────────────
         print("  Preprocessing text…")
@@ -229,9 +278,7 @@ class ReviewClassifier:
             print(f"    {cls:<25} {bar} {cnt}")
 
         # ── Train / test split ────────────────────────────────────────────────
-        X_tr, X_te, y_tr, y_te = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=y
-        )
+        X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
         self._X_te = X_te
         self._y_te = y_te
 
@@ -240,8 +287,7 @@ class ReviewClassifier:
         cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
         cv_results = {}
         for name, model in self.comparison_models.items():
-            scores = cross_val_score(model, X_tr, y_tr, cv=cv,
-                                     scoring="f1_weighted", n_jobs=-1)
+            scores = cross_val_score(model, X_tr, y_tr, cv=cv, scoring="f1_weighted", n_jobs=-1)
             cv_results[name] = {"mean": scores.mean(), "std": scores.std()}
             print(f"    {name:<22}  F1={scores.mean():.4f}  ±{scores.std():.4f}")
         self._cv_results = cv_results
@@ -251,12 +297,16 @@ class ReviewClassifier:
             print("\n  Hyperparameter tuning (GridSearchCV)…")
             param_grid = {
                 "tfidf__max_features": [5000, 10000],
-                "tfidf__ngram_range":  [(1, 1), (1, 2)],
-                "clf__C":              [0.1, 0.5, 1.0, 5.0],
+                "tfidf__ngram_range": [(1, 1), (1, 2)],
+                "clf__C": [0.1, 0.5, 1.0, 5.0],
             }
             grid = GridSearchCV(
-                self.pipeline, param_grid, cv=3,
-                scoring="f1_weighted", n_jobs=-1, verbose=0,
+                self.pipeline,
+                param_grid,
+                cv=3,
+                scoring="f1_weighted",
+                n_jobs=-1,
+                verbose=0,
             )
             grid.fit(X_tr, y_tr)
             self.pipeline = grid.best_estimator_
@@ -277,7 +327,7 @@ class ReviewClassifier:
         y_prob = self.pipeline.predict_proba(X_te)
 
         acc = accuracy_score(y_te, y_pred)
-        f1  = f1_score(y_te, y_pred, average="weighted")
+        f1 = f1_score(y_te, y_pred, average="weighted")
 
         # ROC-AUC (one-vs-rest for multiclass)
         y_bin = label_binarize(y_te, classes=self.classes_)
@@ -293,9 +343,7 @@ class ReviewClassifier:
         print(f"  F1 (weighted)    : {f1:.4f}")
         print(f"  ROC-AUC (OvR)   : {auc:.4f}")
         print(f"\n  Classification report:")
-        print(classification_report(y_te, y_pred,
-                                    target_names=self.classes_,
-                                    zero_division=0))
+        print(classification_report(y_te, y_pred, target_names=self.classes_, zero_division=0))
 
     # ── Plots ─────────────────────────────────────────────────────────────────
     def plot_confusion_matrix(self, save_path="confusion_matrix.png"):
@@ -306,26 +354,49 @@ class ReviewClassifier:
         fig, axes = plt.subplots(1, 2, figsize=(15, 5))
 
         # Raw counts
-        sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
-                    xticklabels=self.classes_, yticklabels=self.classes_,
-                    linewidths=0.4, ax=axes[0], annot_kws={"size": 10})
+        sns.heatmap(
+            cm,
+            annot=True,
+            fmt="d",
+            cmap="Blues",
+            xticklabels=self.classes_,
+            yticklabels=self.classes_,
+            linewidths=0.4,
+            ax=axes[0],
+            annot_kws={"size": 10},
+        )
         axes[0].set_title("Confusion Matrix (counts)", fontweight="bold")
-        axes[0].set_xlabel("Predicted"); axes[0].set_ylabel("Actual")
+        axes[0].set_xlabel("Predicted")
+        axes[0].set_ylabel("Actual")
         axes[0].set_xticklabels(self.classes_, rotation=30, ha="right", fontsize=8)
         axes[0].set_yticklabels(self.classes_, rotation=0, fontsize=8)
 
         # Normalised (row %)
-        sns.heatmap(cm_norm, annot=True, fmt=".2f", cmap="YlOrRd",
-                    xticklabels=self.classes_, yticklabels=self.classes_,
-                    linewidths=0.4, ax=axes[1], annot_kws={"size": 10},
-                    vmin=0, vmax=1)
+        sns.heatmap(
+            cm_norm,
+            annot=True,
+            fmt=".2f",
+            cmap="YlOrRd",
+            xticklabels=self.classes_,
+            yticklabels=self.classes_,
+            linewidths=0.4,
+            ax=axes[1],
+            annot_kws={"size": 10},
+            vmin=0,
+            vmax=1,
+        )
         axes[1].set_title("Confusion Matrix (row %)", fontweight="bold")
-        axes[1].set_xlabel("Predicted"); axes[1].set_ylabel("Actual")
+        axes[1].set_xlabel("Predicted")
+        axes[1].set_ylabel("Actual")
         axes[1].set_xticklabels(self.classes_, rotation=30, ha="right", fontsize=8)
         axes[1].set_yticklabels(self.classes_, rotation=0, fontsize=8)
 
-        plt.suptitle("Multi-Class Classification — Confusion Matrices",
-                     fontsize=13, fontweight="bold", y=1.02)
+        plt.suptitle(
+            "Multi-Class Classification — Confusion Matrices",
+            fontsize=13,
+            fontweight="bold",
+            y=1.02,
+        )
         plt.tight_layout()
         plt.savefig(save_path, dpi=130, bbox_inches="tight")
         plt.close()
@@ -334,20 +405,26 @@ class ReviewClassifier:
     def plot_model_comparison(self, save_path="model_comparison.png"):
         names = list(self._cv_results.keys())
         means = [self._cv_results[n]["mean"] for n in names]
-        stds  = [self._cv_results[n]["std"]  for n in names]
+        stds = [self._cv_results[n]["std"] for n in names]
 
         fig, ax = plt.subplots(figsize=(9, 4))
-        colors = [PALETTE[0] if n == "Logistic Regression" else "#B4B2A9"
-                  for n in names]
-        bars = ax.bar(names, means, yerr=stds, color=colors,
-                      alpha=0.88, edgecolor="white",
-                      capsize=5, error_kw={"linewidth": 1.5})
-        ax.bar_label(bars, labels=[f"{v:.4f}" for v in means],
-                     padding=5, fontsize=10, fontweight="bold")
+        colors = [PALETTE[0] if n == "Logistic Regression" else "#B4B2A9" for n in names]
+        bars = ax.bar(
+            names,
+            means,
+            yerr=stds,
+            color=colors,
+            alpha=0.88,
+            edgecolor="white",
+            capsize=5,
+            error_kw={"linewidth": 1.5},
+        )
+        ax.bar_label(
+            bars, labels=[f"{v:.4f}" for v in means], padding=5, fontsize=10, fontweight="bold"
+        )
         ax.set_ylim(0, 1.15)
         ax.set_ylabel("CV F1 Score (weighted)")
-        ax.set_title("Model Comparison — 5-Fold Cross Validation F1",
-                     fontweight="bold")
+        ax.set_title("Model Comparison — 5-Fold Cross Validation F1", fontweight="bold")
         plt.xticks(rotation=10)
         plt.tight_layout()
         plt.savefig(save_path, dpi=130, bbox_inches="tight")
@@ -360,9 +437,9 @@ class ReviewClassifier:
         High coefficient → strongly predicts that class over others.
         """
         tfidf = self.pipeline.named_steps["tfidf"]
-        clf   = self.pipeline.named_steps["clf"]
+        clf = self.pipeline.named_steps["clf"]
         feat_names = np.array(tfidf.get_feature_names_out())
-        classes    = clf.classes_
+        classes = clf.classes_
 
         n_cls = len(classes)
         fig, axes = plt.subplots(1, n_cls, figsize=(4 * n_cls, 6))
@@ -371,49 +448,51 @@ class ReviewClassifier:
 
         for ax, cls, coef, color in zip(axes, classes, clf.coef_, PALETTE):
             top_idx = coef.argsort()[-top_n:]
-            words   = feat_names[top_idx]
+            words = feat_names[top_idx]
             weights = coef[top_idx]
-            bars = ax.barh(words, weights, color=color,
-                           alpha=0.82, edgecolor="white")
-            ax.set_title(CLASS_LABELS.get(cls, cls),
-                         fontweight="bold", fontsize=9)
+            bars = ax.barh(words, weights, color=color, alpha=0.82, edgecolor="white")
+            ax.set_title(CLASS_LABELS.get(cls, cls), fontweight="bold", fontsize=9)
             ax.set_xlabel("LR coefficient")
             ax.invert_yaxis()
             ax.tick_params(axis="y", labelsize=8)
 
-        plt.suptitle("Top Discriminative Words per Category",
-                     fontsize=13, fontweight="bold", y=1.01)
+        plt.suptitle(
+            "Top Discriminative Words per Category", fontsize=13, fontweight="bold", y=1.01
+        )
         plt.tight_layout()
         plt.savefig(save_path, dpi=130, bbox_inches="tight")
         plt.close()
         print(f"  Saved → {save_path}")
 
-    def plot_class_probabilities(self, reviews: list[str],
-                                  save_path="class_probas.png"):
+    def plot_class_probabilities(self, reviews: list[str], save_path="class_probas.png"):
         """
         Stacked bar showing P(class) for a set of example reviews.
         Great for demos — shows the model's confidence across all classes.
         """
         processed = [preprocess(r) for r in reviews]
-        proba     = self.pipeline.predict_proba(processed)
-        classes   = self.pipeline.classes_
+        proba = self.pipeline.predict_proba(processed)
+        classes = self.pipeline.classes_
 
         short_labels = [r[:45] + "…" if len(r) > 45 else r for r in reviews]
 
         fig, ax = plt.subplots(figsize=(12, max(4, len(reviews) * 0.7)))
         bar_bottoms = np.zeros(len(reviews))
         for i, (cls, color) in enumerate(zip(classes, PALETTE)):
-            ax.barh(short_labels, proba[:, i], left=bar_bottoms,
-                    color=color, alpha=0.85, edgecolor="white",
-                    label=CLASS_LABELS.get(cls, cls))
+            ax.barh(
+                short_labels,
+                proba[:, i],
+                left=bar_bottoms,
+                color=color,
+                alpha=0.85,
+                edgecolor="white",
+                label=CLASS_LABELS.get(cls, cls),
+            )
             bar_bottoms += proba[:, i]
 
         ax.axvline(0.5, color="grey", linewidth=0.8, linestyle="--")
         ax.set_xlabel("Probability")
-        ax.set_title("Predicted Class Probabilities per Review",
-                     fontweight="bold")
-        ax.legend(loc="lower right", fontsize=8,
-                  bbox_to_anchor=(1.01, 0), borderaxespad=0)
+        ax.set_title("Predicted Class Probabilities per Review", fontweight="bold")
+        ax.legend(loc="lower right", fontsize=8, bbox_to_anchor=(1.01, 0), borderaxespad=0)
         ax.invert_yaxis()
         plt.tight_layout()
         plt.savefig(save_path, dpi=130, bbox_inches="tight")
@@ -424,19 +503,30 @@ class ReviewClassifier:
         """Histogram of max predicted probability — shows model calibration."""
         y_prob = self.pipeline.predict_proba(self._X_te)
         max_proba = y_prob.max(axis=1)
-        y_pred    = self.pipeline.predict(self._X_te)
-        correct   = (y_pred == self._y_te)
+        y_pred = self.pipeline.predict(self._X_te)
+        correct = y_pred == self._y_te
 
         fig, ax = plt.subplots(figsize=(9, 4))
-        ax.hist(max_proba[correct],  bins=25, color=PALETTE[0],
-                alpha=0.7, label="Correct", edgecolor="white")
-        ax.hist(max_proba[~correct], bins=25, color=PALETTE[1],
-                alpha=0.7, label="Wrong",   edgecolor="white")
+        ax.hist(
+            max_proba[correct],
+            bins=25,
+            color=PALETTE[0],
+            alpha=0.7,
+            label="Correct",
+            edgecolor="white",
+        )
+        ax.hist(
+            max_proba[~correct],
+            bins=25,
+            color=PALETTE[1],
+            alpha=0.7,
+            label="Wrong",
+            edgecolor="white",
+        )
         ax.axvline(0.5, color="grey", linestyle="--", linewidth=1.2)
         ax.set_xlabel("Max predicted probability (confidence)")
         ax.set_ylabel("Count")
-        ax.set_title("Prediction Confidence Distribution",
-                     fontweight="bold")
+        ax.set_title("Prediction Confidence Distribution", fontweight="bold")
         ax.legend()
         plt.tight_layout()
         plt.savefig(save_path, dpi=130, bbox_inches="tight")
@@ -447,26 +537,26 @@ class ReviewClassifier:
     def predict(self, text: str) -> dict:
         assert self._fitted, "Call fit() first."
         processed = preprocess(text)
-        label     = self.pipeline.predict([processed])[0]
-        proba     = self.pipeline.predict_proba([processed])[0]
+        label = self.pipeline.predict([processed])[0]
+        proba = self.pipeline.predict_proba([processed])[0]
         return {
-            "text":       text[:120] + ("…" if len(text) > 120 else ""),
+            "text": text[:120] + ("…" if len(text) > 120 else ""),
             "prediction": label,
-            "label":      CLASS_LABELS.get(label, label),
+            "label": CLASS_LABELS.get(label, label),
             "confidence": float(proba.max()),
-            "all_probs":  {cls: round(float(p), 4)
-                           for cls, p in zip(self.pipeline.classes_, proba)},
+            "all_probs": {
+                cls: round(float(p), 4) for cls, p in zip(self.pipeline.classes_, proba)
+            },
         }
 
-    def predict_batch(self, df: pd.DataFrame,
-                      text_col: str = "review_text") -> pd.DataFrame:
+    def predict_batch(self, df: pd.DataFrame, text_col: str = "review_text") -> pd.DataFrame:
         processed = df[text_col].fillna("").apply(preprocess).values
-        preds     = self.pipeline.predict(processed)
-        probas    = self.pipeline.predict_proba(processed)
+        preds = self.pipeline.predict(processed)
+        probas = self.pipeline.predict_proba(processed)
         df = df.copy()
         df["predicted_category"] = preds
-        df["predicted_label"]    = [CLASS_LABELS.get(p, p) for p in preds]
-        df["confidence"]         = probas.max(axis=1).round(4)
+        df["predicted_label"] = [CLASS_LABELS.get(p, p) for p in preds]
+        df["confidence"] = probas.max(axis=1).round(4)
         for cls, col_proba in zip(self.pipeline.classes_, probas.T):
             df[f"p_{cls}"] = col_proba.round(4)
         return df
@@ -475,6 +565,7 @@ class ReviewClassifier:
 # ══════════════════════════════════════════════════════════════════════════════
 # PRETTY PRINTER
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 def print_prediction(result: dict) -> None:
     sep = "─" * 60
@@ -485,8 +576,7 @@ def print_prediction(result: dict) -> None:
     print(f"  Prediction : {result['label']}")
     print(f"  Confidence : {conf_bar} {result['confidence']:.1%}")
     print(f"\n  All class probabilities:")
-    for cls, p in sorted(result["all_probs"].items(),
-                          key=lambda x: x[1], reverse=True):
+    for cls, p in sorted(result["all_probs"].items(), key=lambda x: x[1], reverse=True):
         bar = "█" * int(p * 25)
         print(f"    {CLASS_LABELS.get(cls, cls):<28} {bar:<26} {p:.4f}")
     print(sep)
@@ -544,8 +634,8 @@ if __name__ == "__main__":
     # ── Batch prediction ──────────────────────────────────────────────────────
     print("\n\nBATCH PREDICTION:")
     batch_df = pd.DataFrame({"review_text": test_reviews})
-    out_df   = clf.predict_batch(batch_df)
-    print(out_df[["review_text","predicted_label","confidence"]].to_string(index=False))
+    out_df = clf.predict_batch(batch_df)
+    print(out_df[["review_text", "predicted_label", "confidence"]].to_string(index=False))
 
     # ── TF-IDF vocabulary stats ───────────────────────────────────────────────
     tfidf = clf.pipeline.named_steps["tfidf"]

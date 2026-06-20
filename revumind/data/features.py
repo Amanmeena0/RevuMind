@@ -11,23 +11,23 @@ Run on your reviews DataFrame produced by review_scraper.py:
     df_features = build_all_features(df)
 """
 
+from collections import Counter
 import re
 import string
-import pandas as pd
-import numpy as np
-from collections import Counter
 
 # NLP
 import nltk
-from nltk.tokenize import word_tokenize, sent_tokenize
 from nltk.corpus import stopwords
-from nltk.stem import WordNetLemmatizer
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
+from nltk.stem import WordNetLemmatizer
+from nltk.tokenize import sent_tokenize, word_tokenize
+import numpy as np
+import pandas as pd
+from sklearn.decomposition import TruncatedSVD  # LSA / topic features
 
 # Scikit-learn
-from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
-from sklearn.preprocessing import LabelEncoder, StandardScaler, MinMaxScaler
-from sklearn.decomposition import TruncatedSVD   # LSA / topic features
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+from sklearn.preprocessing import LabelEncoder, MinMaxScaler, StandardScaler
 
 # Download required NLTK data (run once)
 for pkg in ["punkt", "stopwords", "wordnet", "vader_lexicon", "averaged_perceptron_tagger"]:
@@ -35,12 +35,13 @@ for pkg in ["punkt", "stopwords", "wordnet", "vader_lexicon", "averaged_perceptr
 
 STOP_WORDS = set(stopwords.words("english"))
 LEMMATIZER = WordNetLemmatizer()
-VADER      = SentimentIntensityAnalyzer()
+VADER = SentimentIntensityAnalyzer()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 1. BASIC TEXT STATISTICS
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 def add_basic_text_features(df: pd.DataFrame, text_col: str = "review_text") -> pd.DataFrame:
     """
@@ -49,10 +50,10 @@ def add_basic_text_features(df: pd.DataFrame, text_col: str = "review_text") -> 
     """
     t = df[text_col].fillna("")
 
-    df["char_count"]          = t.str.len()
-    df["word_count"]          = t.str.split().str.len().fillna(0).astype(int)
-    df["sentence_count"]      = t.apply(lambda x: len(sent_tokenize(x)) if x else 0)
-    df["avg_word_length"]     = t.apply(
+    df["char_count"] = t.str.len()
+    df["word_count"] = t.str.split().str.len().fillna(0).astype(int)
+    df["sentence_count"] = t.apply(lambda x: len(sent_tokenize(x)) if x else 0)
+    df["avg_word_length"] = t.apply(
         lambda x: np.mean([len(w) for w in x.split()]) if x.split() else 0
     )
     df["avg_sentence_length"] = np.where(
@@ -62,17 +63,17 @@ def add_basic_text_features(df: pd.DataFrame, text_col: str = "review_text") -> 
     )
 
     # Punctuation & style signals
-    df["exclamation_count"]   = t.str.count(r"!")
-    df["question_count"]      = t.str.count(r"\?")
-    df["caps_word_count"]     = t.apply(
+    df["exclamation_count"] = t.str.count(r"!")
+    df["question_count"] = t.str.count(r"\?")
+    df["caps_word_count"] = t.apply(
         lambda x: sum(1 for w in x.split() if w.isupper() and len(w) > 1)
     )
-    df["caps_ratio"]          = df["caps_word_count"] / (df["word_count"] + 1)
+    df["caps_ratio"] = df["caps_word_count"] / (df["word_count"] + 1)
 
     # Digit / price mentions
-    df["has_number"]          = t.str.contains(r"\d").astype(int)
-    df["number_count"]        = t.str.count(r"\b\d+\b")
-    df["has_price"]           = t.str.contains(r"₹|\$|rs\.|price|cost", case=False).astype(int)
+    df["has_number"] = t.str.contains(r"\d").astype(int)
+    df["number_count"] = t.str.count(r"\b\d+\b")
+    df["has_price"] = t.str.contains(r"₹|\$|rs\.|price|cost", case=False).astype(int)
 
     # Review length tier — useful as a categorical feature
     df["length_tier"] = pd.cut(
@@ -89,22 +90,23 @@ def add_basic_text_features(df: pd.DataFrame, text_col: str = "review_text") -> 
 # 2. TEXT CLEANING & PREPROCESSING
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def clean_text(text: str) -> str:
     """Standard cleaning pipeline. Returns a clean string."""
     if not isinstance(text, str):
         return ""
     text = text.lower()
-    text = re.sub(r"http\S+|www\.\S+", " ", text)          # remove URLs
-    text = re.sub(r"<.*?>", " ", text)                      # strip HTML tags
-    text = re.sub(r"[^\w\s]", " ", text)                    # remove punctuation
-    text = re.sub(r"\d+", " NUM ", text)                    # replace numbers
-    text = re.sub(r"\s+", " ", text).strip()                # collapse whitespace
+    text = re.sub(r"http\S+|www\.\S+", " ", text)  # remove URLs
+    text = re.sub(r"<.*?>", " ", text)  # strip HTML tags
+    text = re.sub(r"[^\w\s]", " ", text)  # remove punctuation
+    text = re.sub(r"\d+", " NUM ", text)  # replace numbers
+    text = re.sub(r"\s+", " ", text).strip()  # collapse whitespace
     return text
 
 
 def preprocess_text(text: str, remove_stopwords: bool = True) -> str:
     """Clean → tokenize → remove stopwords → lemmatize → rejoin."""
-    text   = clean_text(text)
+    text = clean_text(text)
     tokens = word_tokenize(text)
     if remove_stopwords:
         tokens = [t for t in tokens if t not in STOP_WORDS and len(t) > 1]
@@ -119,7 +121,7 @@ def add_preprocessed_columns(df: pd.DataFrame, text_col: str = "review_text") ->
     - processed_text: clean + no stopwords + lemmatized (for TF-IDF / ML)
     """
     print("Preprocessing text (this may take a minute)…")
-    df["clean_text"]     = df[text_col].fillna("").apply(clean_text)
+    df["clean_text"] = df[text_col].fillna("").apply(clean_text)
     df["processed_text"] = df[text_col].fillna("").apply(preprocess_text)
     print(f"[✓] Text preprocessing done  →  {df.shape[1]} total columns")
     return df
@@ -128,6 +130,7 @@ def add_preprocessed_columns(df: pd.DataFrame, text_col: str = "review_text") ->
 # ══════════════════════════════════════════════════════════════════════════════
 # 3. SENTIMENT FEATURES  (VADER)
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 def add_sentiment_features(df: pd.DataFrame, text_col: str = "clean_text") -> pd.DataFrame:
     """
@@ -139,7 +142,7 @@ def add_sentiment_features(df: pd.DataFrame, text_col: str = "clean_text") -> pd
     df["vader_compound"] = scores.apply(lambda s: s["compound"])
     df["vader_positive"] = scores.apply(lambda s: s["pos"])
     df["vader_negative"] = scores.apply(lambda s: s["neg"])
-    df["vader_neutral"]  = scores.apply(lambda s: s["neu"])
+    df["vader_neutral"] = scores.apply(lambda s: s["neu"])
 
     # Categorical label from compound score
     df["vader_label"] = pd.cut(
@@ -167,19 +170,65 @@ def add_sentiment_features(df: pd.DataFrame, text_col: str = "clean_text") -> pd
 # ══════════════════════════════════════════════════════════════════════════════
 
 POSITIVE_WORDS = {
-    "excellent", "amazing", "fantastic", "love", "perfect", "great", "wonderful",
-    "outstanding", "superb", "best", "awesome", "brilliant", "good", "happy",
-    "satisfied", "recommend", "quality", "worth",
+    "excellent",
+    "amazing",
+    "fantastic",
+    "love",
+    "perfect",
+    "great",
+    "wonderful",
+    "outstanding",
+    "superb",
+    "best",
+    "awesome",
+    "brilliant",
+    "good",
+    "happy",
+    "satisfied",
+    "recommend",
+    "quality",
+    "worth",
 }
 NEGATIVE_WORDS = {
-    "terrible", "awful", "worst", "hate", "horrible", "poor", "bad", "useless",
-    "broken", "defective", "damaged", "waste", "disappointed", "refund", "return",
-    "never", "problem", "issue", "fake", "cheap",
+    "terrible",
+    "awful",
+    "worst",
+    "hate",
+    "horrible",
+    "poor",
+    "bad",
+    "useless",
+    "broken",
+    "defective",
+    "damaged",
+    "waste",
+    "disappointed",
+    "refund",
+    "return",
+    "never",
+    "problem",
+    "issue",
+    "fake",
+    "cheap",
 }
 FEATURE_WORDS = {
-    "battery", "screen", "camera", "sound", "design", "size", "weight",
-    "performance", "speed", "quality", "price", "value", "delivery", "packaging",
-    "build", "display", "charging",
+    "battery",
+    "screen",
+    "camera",
+    "sound",
+    "design",
+    "size",
+    "weight",
+    "performance",
+    "speed",
+    "quality",
+    "price",
+    "value",
+    "delivery",
+    "packaging",
+    "build",
+    "display",
+    "charging",
 }
 
 
@@ -192,11 +241,11 @@ def add_lexicon_features(df: pd.DataFrame, text_col: str = "processed_text") -> 
 
     df["positive_word_count"] = df[text_col].apply(lambda t: count_words(t, POSITIVE_WORDS))
     df["negative_word_count"] = df[text_col].apply(lambda t: count_words(t, NEGATIVE_WORDS))
-    df["feature_word_count"]  = df[text_col].apply(lambda t: count_words(t, FEATURE_WORDS))
+    df["feature_word_count"] = df[text_col].apply(lambda t: count_words(t, FEATURE_WORDS))
 
     df["positive_word_ratio"] = df["positive_word_count"] / (df["word_count"] + 1)
     df["negative_word_ratio"] = df["negative_word_count"] / (df["word_count"] + 1)
-    df["lexicon_net_score"]   = df["positive_word_count"] - df["negative_word_count"]
+    df["lexicon_net_score"] = df["positive_word_count"] - df["negative_word_count"]
 
     print(f"[✓] Lexicon features added  →  {df.shape[1]} total columns")
     return df
@@ -206,9 +255,10 @@ def add_lexicon_features(df: pd.DataFrame, text_col: str = "processed_text") -> 
 # 5. TF-IDF FEATURES
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def build_tfidf_features(
     df: pd.DataFrame,
-    text_col:    str = "processed_text",
+    text_col: str = "processed_text",
     max_features: int = 5000,
     ngram_range: tuple = (1, 2),
     n_svd_components: int = 50,
@@ -227,11 +277,11 @@ def build_tfidf_features(
     """
     print(f"Building TF-IDF ({max_features} features, ngrams {ngram_range})…")
     vectorizer = TfidfVectorizer(
-        max_features = max_features,
-        ngram_range  = ngram_range,
-        min_df       = 2,
-        max_df       = 0.95,
-        sublinear_tf = True,      # log(1 + tf) — reduces impact of very common terms
+        max_features=max_features,
+        ngram_range=ngram_range,
+        min_df=2,
+        max_df=0.95,
+        sublinear_tf=True,  # log(1 + tf) — reduces impact of very common terms
     )
     tfidf_matrix = vectorizer.fit_transform(df[text_col].fillna(""))
 
@@ -240,18 +290,21 @@ def build_tfidf_features(
     lsa = svd.fit_transform(tfidf_matrix)
 
     lsa_cols = [f"lsa_{i}" for i in range(n_svd_components)]
-    df_lsa   = pd.DataFrame(lsa, columns=lsa_cols, index=df.index)
-    df       = pd.concat([df, df_lsa], axis=1)
+    df_lsa = pd.DataFrame(lsa, columns=lsa_cols, index=df.index)
+    df = pd.concat([df, df_lsa], axis=1)
 
     explained = svd.explained_variance_ratio_.sum()
-    print(f"[✓] TF-IDF + LSA done  →  {n_svd_components} components explain "
-          f"{explained:.1%} of variance  |  {df.shape[1]} total columns")
+    print(
+        f"[✓] TF-IDF + LSA done  →  {n_svd_components} components explain "
+        f"{explained:.1%} of variance  |  {df.shape[1]} total columns"
+    )
     return df, vectorizer, svd
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 6. STAR RATING FEATURES
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 def add_rating_features(df: pd.DataFrame) -> pd.DataFrame:
     """Encode star ratings in multiple ways for different model types."""
@@ -288,6 +341,7 @@ def add_rating_features(df: pd.DataFrame) -> pd.DataFrame:
 # 7. METADATA FEATURES
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def add_metadata_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     Features from review metadata — not text content.
@@ -299,28 +353,28 @@ def add_metadata_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # Helpful votes
     if "helpful_votes" in df.columns:
-        df["helpful_votes"]     = pd.to_numeric(df["helpful_votes"], errors="coerce").fillna(0)
-        df["log_helpful_votes"] = np.log1p(df["helpful_votes"])   # log(1+x) — handles zeros
-        df["is_helpful"]        = (df["helpful_votes"] >= 5).astype(int)
+        df["helpful_votes"] = pd.to_numeric(df["helpful_votes"], errors="coerce").fillna(0)
+        df["log_helpful_votes"] = np.log1p(df["helpful_votes"])  # log(1+x) — handles zeros
+        df["is_helpful"] = (df["helpful_votes"] >= 5).astype(int)
 
     # Images attached
     if "image_count" in df.columns:
-        df["has_images"]   = (df["image_count"] > 0).astype(int)
+        df["has_images"] = (df["image_count"] > 0).astype(int)
         df["log_img_count"] = np.log1p(df["image_count"])
 
     # Date-based features
     if "review_date_parsed" in df.columns:
         df["review_date_parsed"] = pd.to_datetime(df["review_date_parsed"], errors="coerce")
-        df["review_year"]  = df["review_date_parsed"].dt.year
+        df["review_year"] = df["review_date_parsed"].dt.year
         df["review_month"] = df["review_date_parsed"].dt.month
-        df["review_dow"]   = df["review_date_parsed"].dt.dayofweek   # 0=Mon … 6=Sun
-        df["is_weekend"]   = (df["review_dow"] >= 5).astype(int)
+        df["review_dow"] = df["review_date_parsed"].dt.dayofweek  # 0=Mon … 6=Sun
+        df["is_weekend"] = (df["review_dow"] >= 5).astype(int)
 
     # Reviewer activity (requires multiple rows per reviewer)
     if "reviewer_name" in df.columns:
         review_counts = df.groupby("reviewer_name")["review_text"].transform("count")
         df["reviewer_review_count"] = review_counts
-        df["is_power_reviewer"]     = (review_counts >= 5).astype(int)
+        df["is_power_reviewer"] = (review_counts >= 5).astype(int)
 
     # Per-product stats (useful for anomaly / fake-review detection)
     if "product_id" in df.columns:
@@ -339,17 +393,18 @@ def add_metadata_features(df: pd.DataFrame) -> pd.DataFrame:
 # 8. POS TAG FEATURES  (Part-of-Speech)
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def get_pos_counts(text: str) -> dict:
     """Count nouns, verbs, adjectives, adverbs in a text."""
     if not text:
         return {"noun_count": 0, "verb_count": 0, "adj_count": 0, "adv_count": 0}
-    tokens = word_tokenize(text[:500])    # cap at 500 chars for speed
-    tags   = nltk.pos_tag(tokens)
+    tokens = word_tokenize(text[:500])  # cap at 500 chars for speed
+    tags = nltk.pos_tag(tokens)
     return {
         "noun_count": sum(1 for _, t in tags if t.startswith("NN")),
         "verb_count": sum(1 for _, t in tags if t.startswith("VB")),
-        "adj_count":  sum(1 for _, t in tags if t.startswith("JJ")),
-        "adv_count":  sum(1 for _, t in tags if t.startswith("RB")),
+        "adj_count": sum(1 for _, t in tags if t.startswith("JJ")),
+        "adv_count": sum(1 for _, t in tags if t.startswith("RB")),
     }
 
 
@@ -368,10 +423,10 @@ def add_pos_features(df: pd.DataFrame, text_col: str = "clean_text") -> pd.DataF
     df = pd.concat([df, pos_df], axis=1)
 
     total = df["word_count"] + 1
-    df["adj_ratio"]  = df["adj_count"]  / total
+    df["adj_ratio"] = df["adj_count"] / total
     df["noun_ratio"] = df["noun_count"] / total
     df["verb_ratio"] = df["verb_count"] / total
-    df["adv_ratio"]  = df["adv_count"]  / total
+    df["adv_ratio"] = df["adv_count"] / total
 
     print(f"[✓] POS features added  →  {df.shape[1]} total columns")
     return df
@@ -382,13 +437,27 @@ def add_pos_features(df: pd.DataFrame, text_col: str = "clean_text") -> pd.DataF
 # ══════════════════════════════════════════════════════════════════════════════
 
 NUMERIC_COLS_TO_SCALE = [
-    "char_count", "word_count", "sentence_count", "avg_word_length",
-    "avg_sentence_length", "exclamation_count", "question_count",
-    "caps_ratio", "number_count",
-    "vader_compound", "vader_positive", "vader_negative",
-    "positive_word_count", "negative_word_count", "lexicon_net_score",
-    "helpful_votes", "log_helpful_votes", "reviewer_review_count",
-    "product_avg_rating", "product_rating_std", "rating_deviation",
+    "char_count",
+    "word_count",
+    "sentence_count",
+    "avg_word_length",
+    "avg_sentence_length",
+    "exclamation_count",
+    "question_count",
+    "caps_ratio",
+    "number_count",
+    "vader_compound",
+    "vader_positive",
+    "vader_negative",
+    "positive_word_count",
+    "negative_word_count",
+    "lexicon_net_score",
+    "helpful_votes",
+    "log_helpful_votes",
+    "reviewer_review_count",
+    "product_avg_rating",
+    "product_rating_std",
+    "rating_deviation",
 ]
 
 
@@ -401,9 +470,7 @@ def add_scaled_features(df: pd.DataFrame) -> tuple[pd.DataFrame, StandardScaler]
     cols = [c for c in NUMERIC_COLS_TO_SCALE if c in df.columns]
     scaler = StandardScaler()
     scaled = scaler.fit_transform(df[cols].fillna(0))
-    scaled_df = pd.DataFrame(
-        scaled, columns=[f"{c}_scaled" for c in cols], index=df.index
-    )
+    scaled_df = pd.DataFrame(scaled, columns=[f"{c}_scaled" for c in cols], index=df.index)
     df = pd.concat([df, scaled_df], axis=1)
     print(f"[✓] Scaling done on {len(cols)} columns  →  {df.shape[1]} total columns")
     return df, scaler
@@ -413,12 +480,13 @@ def add_scaled_features(df: pd.DataFrame) -> tuple[pd.DataFrame, StandardScaler]
 # 10. MASTER PIPELINE
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def build_all_features(
     df: pd.DataFrame,
-    text_col:     str  = "review_text",
-    tfidf_feats:  bool = True,
-    pos_feats:    bool = True,
-    scale:        bool = True,
+    text_col: str = "review_text",
+    tfidf_feats: bool = True,
+    pos_feats: bool = True,
+    scale: bool = True,
 ) -> tuple[pd.DataFrame, dict]:
     """
     Run the complete feature engineering pipeline.
@@ -428,9 +496,9 @@ def build_all_features(
         artifacts : dict with fitted vectorizer, svd, scaler
                     → save these to disk for consistent inference
     """
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("  FEATURE ENGINEERING PIPELINE")
-    print("="*60)
+    print("=" * 60)
 
     artifacts = {}
 
@@ -447,17 +515,17 @@ def build_all_features(
     if tfidf_feats:
         df, vectorizer, svd = build_tfidf_features(df, "processed_text")
         artifacts["vectorizer"] = vectorizer
-        artifacts["svd"]        = svd
+        artifacts["svd"] = svd
 
     if scale:
         df, scaler = add_scaled_features(df)
         artifacts["scaler"] = scaler
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print(f"  PIPELINE COMPLETE")
     print(f"  Input rows    : {len(df):,}")
     print(f"  Total columns : {df.shape[1]}")
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")
 
     return df, artifacts
 
@@ -466,30 +534,61 @@ def build_all_features(
 # FEATURE SUMMARY HELPER
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def print_feature_groups(df: pd.DataFrame) -> None:
     """Print a summary of every feature group and their columns."""
     groups = {
-        "Basic text stats":  [c for c in df.columns if c in [
-            "char_count","word_count","sentence_count","avg_word_length",
-            "avg_sentence_length","exclamation_count","question_count",
-            "caps_ratio","number_count","has_price","length_tier"]],
-        "VADER sentiment":   [c for c in df.columns if c.startswith("vader")],
-        "Lexicon":           [c for c in df.columns if "word_count" in c or "lexicon" in c or "ratio" in c],
-        "Rating":            [c for c in df.columns if "rating" in c or "star" in c],
-        "Metadata":          [c for c in df.columns if c in [
-            "is_verified","helpful_votes","log_helpful_votes","has_images",
-            "review_year","review_month","is_weekend","reviewer_review_count",
-            "product_avg_rating","product_rating_std","rating_deviation"]],
-        "POS tags":          [c for c in df.columns if c.endswith("_count") and c[:3] in ["nou","ver","adj","adv"]],
-        "LSA (TF-IDF)":      [c for c in df.columns if c.startswith("lsa_")],
-        "Scaled":            [c for c in df.columns if c.endswith("_scaled")],
+        "Basic text stats": [
+            c
+            for c in df.columns
+            if c
+            in [
+                "char_count",
+                "word_count",
+                "sentence_count",
+                "avg_word_length",
+                "avg_sentence_length",
+                "exclamation_count",
+                "question_count",
+                "caps_ratio",
+                "number_count",
+                "has_price",
+                "length_tier",
+            ]
+        ],
+        "VADER sentiment": [c for c in df.columns if c.startswith("vader")],
+        "Lexicon": [c for c in df.columns if "word_count" in c or "lexicon" in c or "ratio" in c],
+        "Rating": [c for c in df.columns if "rating" in c or "star" in c],
+        "Metadata": [
+            c
+            for c in df.columns
+            if c
+            in [
+                "is_verified",
+                "helpful_votes",
+                "log_helpful_votes",
+                "has_images",
+                "review_year",
+                "review_month",
+                "is_weekend",
+                "reviewer_review_count",
+                "product_avg_rating",
+                "product_rating_std",
+                "rating_deviation",
+            ]
+        ],
+        "POS tags": [
+            c for c in df.columns if c.endswith("_count") and c[:3] in ["nou", "ver", "adj", "adv"]
+        ],
+        "LSA (TF-IDF)": [c for c in df.columns if c.startswith("lsa_")],
+        "Scaled": [c for c in df.columns if c.endswith("_scaled")],
     }
     print("\nFEATURE GROUPS")
-    print("-"*50)
+    print("-" * 50)
     for group, cols in groups.items():
         if cols:
             print(f"  {group:<22} {len(cols):>3} features")
-    print("-"*50)
+    print("-" * 50)
     print(f"  {'TOTAL':<22} {df.shape[1]:>3} columns\n")
 
 
@@ -500,32 +599,28 @@ def print_feature_groups(df: pd.DataFrame) -> None:
 if __name__ == "__main__":
     # ── Build a small demo DataFrame ─────────────────────────────────────────
     demo_data = {
-        "product_id":   ["P001", "P001", "P002", "P002", "P003"],
+        "product_id": ["P001", "P001", "P002", "P002", "P003"],
         "product_name": ["Echo Dot"] * 2 + ["Fire TV"] * 2 + ["Kindle"],
-        "reviewer_name":["Riya", "Arjun", "Priya", "Karan", "Sneha"],
-        "star_rating":  [5, 1, 4, 2, 5],
-        "review_text":  [
+        "reviewer_name": ["Riya", "Arjun", "Priya", "Karan", "Sneha"],
+        "star_rating": [5, 1, 4, 2, 5],
+        "review_text": [
             "Absolutely love this product! The sound quality is amazing and the battery lasts forever. "
             "Perfect for my home. Highly recommend to everyone!",
-
             "Terrible product. Broke after 2 days. Worst purchase ever. The screen is cracked "
             "and customer service refused to help. Total waste of money!",
-
             "Good value for the price. Camera quality is decent. Delivery was fast. "
             "The design is sleek and the performance is smooth. Happy with this purchase.",
-
             "Disappointed with the quality. Battery drains too fast and the sound is poor. "
             "Expected much better for this price. Would not recommend.",
-
             "This is the best Kindle I have ever owned! Reading experience is phenomenal. "
             "Very lightweight and the display is crystal clear. Worth every rupee!",
         ],
-        "verified":      [True, True, False, True, True],
+        "verified": [True, True, False, True, True],
         "helpful_votes": [23, 5, 8, 2, 41],
-        "image_count":   [2, 0, 1, 0, 3],
-        "review_date_parsed": pd.to_datetime([
-            "2024-01-15", "2024-02-20", "2024-03-10", "2024-04-05", "2024-01-28"
-        ]),
+        "image_count": [2, 0, 1, 0, 3],
+        "review_date_parsed": pd.to_datetime(
+            ["2024-01-15", "2024-02-20", "2024-03-10", "2024-04-05", "2024-01-28"]
+        ),
     }
     df_demo = pd.DataFrame(demo_data)
 
@@ -535,21 +630,28 @@ if __name__ == "__main__":
     # ── Run the full pipeline ─────────────────────────────────────────────────
     df_out, artifacts = build_all_features(
         df_demo,
-        text_col    = "review_text",
-        tfidf_feats = True,
-        pos_feats   = True,
-        scale       = True,
+        text_col="review_text",
+        tfidf_feats=True,
+        pos_feats=True,
+        scale=True,
     )
 
     print_feature_groups(df_out)
 
     # ── Show key engineered features ──────────────────────────────────────────
     show_cols = [
-        "reviewer_name", "star_rating",
-        "word_count", "avg_word_length", "exclamation_count",
-        "vader_compound", "vader_label",
-        "positive_word_count", "negative_word_count",
-        "is_verified", "has_images", "is_positive_review",
+        "reviewer_name",
+        "star_rating",
+        "word_count",
+        "avg_word_length",
+        "exclamation_count",
+        "vader_compound",
+        "vader_label",
+        "positive_word_count",
+        "negative_word_count",
+        "is_verified",
+        "has_images",
+        "is_positive_review",
         "adj_ratio",
     ]
     show_cols = [c for c in show_cols if c in df_out.columns]

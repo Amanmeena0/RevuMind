@@ -34,15 +34,20 @@ Usage:
     best_model = tuner.fit(X_res, y_res)
 """
 
-import re, warnings, time
+import re
+import time
+import warnings
+
+import matplotlib
 import numpy as np
 import pandas as pd
-import matplotlib
+
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
-import seaborn as sns
 from collections import Counter
+
+import matplotlib.gridspec as gridspec
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 from revumind.utils.constants import PALETTE, configure_plotting
 
@@ -57,14 +62,31 @@ configure_plotting()
 # ══════════════════════════════════════════════════════════════════════════════
 
 REVIEW_TEXTS = {
-    0: [   # unhelpful — most common (80% of real data)
-        "Good product.", "Nice.", "Works fine.", "Okay.", "Five stars!",
-        "Fast delivery.", "As described.", "Happy with purchase.", "Good.",
-        "Arrived quickly.", "Works as expected.", "Recommended.", "Fine.",
-        "Bad product.", "Waste of money.", "Not good.", "Disappointed.",
-        "Returned.", "Broken.", "Poor quality.", "Terrible.", "Avoid.",
+    0: [  # unhelpful — most common (80% of real data)
+        "Good product.",
+        "Nice.",
+        "Works fine.",
+        "Okay.",
+        "Five stars!",
+        "Fast delivery.",
+        "As described.",
+        "Happy with purchase.",
+        "Good.",
+        "Arrived quickly.",
+        "Works as expected.",
+        "Recommended.",
+        "Fine.",
+        "Bad product.",
+        "Waste of money.",
+        "Not good.",
+        "Disappointed.",
+        "Returned.",
+        "Broken.",
+        "Poor quality.",
+        "Terrible.",
+        "Avoid.",
     ],
-    1: [   # neutral — moderately rare (15%)
+    1: [  # neutral — moderately rare (15%)
         "Good product overall. Works as expected. Delivery was fast. Packaging was nice.",
         "Decent quality for the price. Some minor issues. Customer support was helpful.",
         "Works fine. Not the best not the worst. Does what it says. Acceptable quality.",
@@ -73,22 +95,19 @@ REVIEW_TEXTS = {
         "Mixed feelings about this product. Has pros and cons. Delivery was on time.",
         "It is alright. Does what it says. Nothing special but meets basic requirements.",
     ],
-    2: [   # helpful — rarest (5%)
+    2: [  # helpful — rarest (5%)
         "I have been using this product for 3 months and here is my detailed assessment. "
         "Battery life is exceptional lasting 2 full days with heavy use. Build quality is "
         "premium metal. Camera captures stunning detail even in low light. However the "
         "software has occasional bugs. Overall worth every rupee at this price point.",
-
         "Detailed review after 6 weeks of daily use. Sound quality is outstanding with "
         "rich deep bass. Noise cancellation blocks 95 percent of ambient sound. Very "
         "comfortable for long sessions. Charging takes 2 hours and lasts 30 hours. "
         "Only downside is the companion app which feels bloated and slow.",
-
         "Bought this for my home office. Display colour accuracy is excellent for design "
         "work. 144Hz refresh makes everything silky smooth. Build is sturdy and premium. "
         "Arrived safely packaged. Setup took 10 minutes. Compared to my previous monitor "
         "this is a massive upgrade. The stand is adjustable and the cables are well managed.",
-
         "After extensive testing here is my comprehensive review. Performance is top notch "
         "with zero lag even during heavy multitasking with 20 browser tabs. Display is "
         "vibrant and colour accurate. Battery optimization has improved massively with the "
@@ -99,8 +118,8 @@ REVIEW_TEXTS = {
 
 
 def build_imbalanced_dataset(
-    n_total:    int   = 600,
-    ratios:     tuple = (0.80, 0.15, 0.05),  # unhelpful, neutral, helpful
+    n_total: int = 600,
+    ratios: tuple = (0.80, 0.15, 0.05),  # unhelpful, neutral, helpful
 ) -> tuple[list, np.ndarray]:
     """
     Build a realistically imbalanced review dataset.
@@ -118,10 +137,16 @@ def build_imbalanced_dataset(
             base = pool[i % len(pool)]
             # Add variation
             if np.random.random() < 0.3:
-                add = np.random.choice([
-                    " Would recommend.", " Not recommended.",
-                    " Good value.", " Poor value.", " Happy.", " Disappointed.",
-                ])
+                add = np.random.choice(
+                    [
+                        " Would recommend.",
+                        " Not recommended.",
+                        " Good value.",
+                        " Poor value.",
+                        " Happy.",
+                        " Disappointed.",
+                    ]
+                )
                 base = base + add
             texts.append(base)
             labels.append(label)
@@ -136,16 +161,59 @@ def build_imbalanced_dataset(
 # ══════════════════════════════════════════════════════════════════════════════
 
 STOP_WORDS = {
-    'i','me','my','we','our','you','your','it','its','am','is','are','was',
-    'were','be','been','have','has','had','do','does','did','a','an','the',
-    'and','but','if','or','as','of','at','by','for','with','to','from',
-    'in','on','so','too','very','just','not','also','this','that',
+    "i",
+    "me",
+    "my",
+    "we",
+    "our",
+    "you",
+    "your",
+    "it",
+    "its",
+    "am",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "have",
+    "has",
+    "had",
+    "do",
+    "does",
+    "did",
+    "a",
+    "an",
+    "the",
+    "and",
+    "but",
+    "if",
+    "or",
+    "as",
+    "of",
+    "at",
+    "by",
+    "for",
+    "with",
+    "to",
+    "from",
+    "in",
+    "on",
+    "so",
+    "too",
+    "very",
+    "just",
+    "not",
+    "also",
+    "this",
+    "that",
 }
 
 
 def extract_features(
     texts_train: list,
-    texts_test:  list,
+    texts_test: list,
     max_features: int = 5000,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
@@ -158,8 +226,10 @@ def extract_features(
     """
     # TF-IDF
     vec = TfidfVectorizer(
-        max_features=max_features, ngram_range=(1, 2),
-        min_df=1, sublinear_tf=True,
+        max_features=max_features,
+        ngram_range=(1, 2),
+        min_df=1,
+        sublinear_tf=True,
     )
     X_tr_tfidf = vec.fit_transform(texts_train)
     X_te_tfidf = vec.transform(texts_test)
@@ -169,18 +239,20 @@ def extract_features(
         feats = []
         for t in texts:
             words = t.split()
-            feats.append([
-                len(words),
-                len(t),
-                np.mean([len(w) for w in words]) if words else 0,
-                len(set(w.lower() for w in words)) / max(len(words), 1),
-                t.count("!"),
-                t.count("?"),
-                int(bool(re.search(r"\d", t))),
-                int(bool(re.search(r"\b(however|but|although|despite)\b", t.lower()))),
-                int(bool(re.search(r"\b(vs|compared|versus|better|worse)\b", t.lower()))),
-                len(re.split(r"[.!?]+", t)),
-            ])
+            feats.append(
+                [
+                    len(words),
+                    len(t),
+                    np.mean([len(w) for w in words]) if words else 0,
+                    len(set(w.lower() for w in words)) / max(len(words), 1),
+                    t.count("!"),
+                    t.count("?"),
+                    int(bool(re.search(r"\d", t))),
+                    int(bool(re.search(r"\b(however|but|although|despite)\b", t.lower()))),
+                    int(bool(re.search(r"\b(vs|compared|versus|better|worse)\b", t.lower()))),
+                    len(re.split(r"[.!?]+", t)),
+                ]
+            )
         return np.array(feats, dtype=np.float32)
 
     L_tr = ling(texts_train)
@@ -191,6 +263,7 @@ def extract_features(
     L_te_s = sc.transform(L_te)
 
     import scipy.sparse as sp
+
     X_tr = sp.hstack([X_tr_tfidf, sp.csr_matrix(L_tr_s)]).toarray()
     X_te = sp.hstack([X_te_tfidf, sp.csr_matrix(L_te_s)]).toarray()
 
@@ -201,6 +274,7 @@ def extract_features(
 # ══════════════════════════════════════════════════════════════════════════════
 # 3.  IMBALANCE HANDLING METHODS
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class ImbalanceHandler:
     """
@@ -311,9 +385,7 @@ class ImbalanceHandler:
         if not IMBLEARN_OK:
             return X, y
 
-        rus = RandomUnderSampler(
-            sampling_strategy=sampling_strategy, random_state=42
-        )
+        rus = RandomUnderSampler(sampling_strategy=sampling_strategy, random_state=42)
         X_res, y_res = rus.fit_resample(X, y)
         print(f"  Under-sample: {Counter(y)} → {Counter(y_res)}")
         return X_res, y_res
@@ -348,10 +420,10 @@ class ImbalanceHandler:
     @staticmethod
     def tune_threshold(
         model,
-        X_val:    np.ndarray,
-        y_val:    np.ndarray,
+        X_val: np.ndarray,
+        y_val: np.ndarray,
         target_class: int = 2,
-        metric:   str = "f1",
+        metric: str = "f1",
     ) -> float:
         """
         Find the optimal decision threshold for a binary or multiclass model.
@@ -369,9 +441,9 @@ class ImbalanceHandler:
             print("  Model has no predict_proba — threshold tuning skipped.")
             return 0.5
 
-        proba  = model.predict_proba(X_val)
+        proba = model.predict_proba(X_val)
         scores = proba[:, target_class]
-        y_bin  = (y_val == target_class).astype(int)
+        y_bin = (y_val == target_class).astype(int)
 
         best_thresh, best_score = 0.5, 0.0
         thresholds = np.arange(0.1, 0.9, 0.05)
@@ -381,17 +453,20 @@ class ImbalanceHandler:
                 continue
             score = f1_score(y_bin, preds, zero_division=0)
             if score > best_score:
-                best_score  = score
+                best_score = score
                 best_thresh = thresh
 
-        print(f"  Optimal threshold (class {target_class}): "
-              f"{best_thresh:.2f}  (F1={best_score:.4f})")
+        print(
+            f"  Optimal threshold (class {target_class}): "
+            f"{best_thresh:.2f}  (F1={best_score:.4f})"
+        )
         return best_thresh
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 4.  GRIDSEARCHCV TUNER
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class HyperparamTuner:
     """
@@ -405,12 +480,10 @@ class HyperparamTuner:
     """
 
     def __init__(self, cv_folds: int = 5, n_jobs: int = -1):
-        self.cv      = StratifiedKFold(
-            n_splits=cv_folds, shuffle=True, random_state=42
-        )
-        self.n_jobs  = n_jobs
-        self.best_model   = None
-        self.best_params  = None
+        self.cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=42)
+        self.n_jobs = n_jobs
+        self.best_model = None
+        self.best_params = None
         self.grid_results = {}
 
     def _f1_macro_scorer(self):
@@ -422,7 +495,7 @@ class HyperparamTuner:
         self,
         X_train: np.ndarray,
         y_train: np.ndarray,
-        mode:    str = "grid",   # "grid" | "random"
+        mode: str = "grid",  # "grid" | "random"
     ) -> GridSearchCV:
         """
         Parameters to tune:
@@ -438,36 +511,44 @@ class HyperparamTuner:
         """
         if mode == "grid":
             param_grid = {
-                "C":            [0.01, 0.1, 1.0, 5.0, 10.0],
+                "C": [0.01, 0.1, 1.0, 5.0, 10.0],
                 "class_weight": [None, "balanced"],
-                "penalty":      ["l2"],
-                "solver":       ["lbfgs"],
-                "max_iter":     [500],
+                "penalty": ["l2"],
+                "solver": ["lbfgs"],
+                "max_iter": [500],
             }
         else:
             param_grid = {
-                "C":            loguniform(0.001, 100),
+                "C": loguniform(0.001, 100),
                 "class_weight": [None, "balanced"],
-                "penalty":      ["l2"],
-                "solver":       ["lbfgs"],
-                "max_iter":     [500],
+                "penalty": ["l2"],
+                "solver": ["lbfgs"],
+                "max_iter": [500],
             }
 
         base = LogisticRegression(random_state=42, multi_class="auto")
 
         if mode == "grid":
             search = GridSearchCV(
-                base, param_grid, cv=self.cv,
+                base,
+                param_grid,
+                cv=self.cv,
                 scoring=self._f1_macro_scorer(),
-                n_jobs=self.n_jobs, verbose=0,
+                n_jobs=self.n_jobs,
+                verbose=0,
                 return_train_score=True,
             )
         else:
             search = RandomizedSearchCV(
-                base, param_grid, n_iter=20, cv=self.cv,
+                base,
+                param_grid,
+                n_iter=20,
+                cv=self.cv,
                 scoring=self._f1_macro_scorer(),
-                n_jobs=self.n_jobs, verbose=0,
-                random_state=42, return_train_score=True,
+                n_jobs=self.n_jobs,
+                verbose=0,
+                random_state=42,
+                return_train_score=True,
             )
 
         t0 = time.time()
@@ -475,8 +556,10 @@ class HyperparamTuner:
         elapsed = time.time() - t0
 
         self.grid_results["LogisticRegression"] = search
-        print(f"  LR [{mode}] best F1={search.best_score_:.4f}  "
-              f"params={search.best_params_}  ({elapsed:.1f}s)")
+        print(
+            f"  LR [{mode}] best F1={search.best_score_:.4f}  "
+            f"params={search.best_params_}  ({elapsed:.1f}s)"
+        )
         return search
 
     # ── Random Forest grid ────────────────────────────────────────────────────
@@ -484,7 +567,7 @@ class HyperparamTuner:
         self,
         X_train: np.ndarray,
         y_train: np.ndarray,
-        mode:    str = "random",
+        mode: str = "random",
     ) -> RandomizedSearchCV:
         """
         Parameters to tune:
@@ -497,26 +580,31 @@ class HyperparamTuner:
         """
         if mode == "grid":
             param_grid = {
-                "n_estimators":     [100, 200],
-                "max_depth":        [None, 10, 20],
+                "n_estimators": [100, 200],
+                "max_depth": [None, 10, 20],
                 "min_samples_leaf": [1, 5, 10],
-                "class_weight":     ["balanced", "balanced_subsample"],
+                "class_weight": ["balanced", "balanced_subsample"],
             }
         else:
             param_grid = {
-                "n_estimators":     randint(50, 300),
-                "max_depth":        [None, 5, 10, 15, 20, 30],
+                "n_estimators": randint(50, 300),
+                "max_depth": [None, 5, 10, 15, 20, 30],
                 "min_samples_leaf": randint(1, 20),
-                "max_features":     ["sqrt", "log2", 0.3, 0.5],
-                "class_weight":     ["balanced", "balanced_subsample"],
+                "max_features": ["sqrt", "log2", 0.3, 0.5],
+                "class_weight": ["balanced", "balanced_subsample"],
             }
 
         base = RandomForestClassifier(random_state=42, n_jobs=self.n_jobs)
 
         search = RandomizedSearchCV(
-            base, param_grid, n_iter=15, cv=self.cv,
+            base,
+            param_grid,
+            n_iter=15,
+            cv=self.cv,
             scoring=self._f1_macro_scorer(),
-            n_jobs=1, verbose=0, random_state=42,
+            n_jobs=1,
+            verbose=0,
+            random_state=42,
             return_train_score=True,
         )
 
@@ -525,19 +613,23 @@ class HyperparamTuner:
         elapsed = time.time() - t0
 
         self.grid_results["RandomForest"] = search
-        print(f"  RF [random] best F1={search.best_score_:.4f}  "
-              f"params={search.best_params_}  ({elapsed:.1f}s)")
+        print(
+            f"  RF [random] best F1={search.best_score_:.4f}  "
+            f"params={search.best_params_}  ({elapsed:.1f}s)"
+        )
         return search
 
     # ── Full summary ──────────────────────────────────────────────────────────
     def compare_all(self) -> pd.DataFrame:
         rows = []
         for name, search in self.grid_results.items():
-            rows.append({
-                "model":       name,
-                "best_cv_f1":  search.best_score_,
-                "best_params": str(search.best_params_),
-            })
+            rows.append(
+                {
+                    "model": name,
+                    "best_cv_f1": search.best_score_,
+                    "best_params": str(search.best_params_),
+                }
+            )
         df = pd.DataFrame(rows).sort_values("best_cv_f1", ascending=False)
         return df
 
@@ -546,11 +638,12 @@ class HyperparamTuner:
 # 5.  EVALUATION
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def evaluate_model(
     model,
-    X_test:      np.ndarray,
-    y_test:      np.ndarray,
-    model_name:  str = "Model",
+    X_test: np.ndarray,
+    y_test: np.ndarray,
+    model_name: str = "Model",
     class_names: list = CLASS_NAMES,
 ) -> dict:
     """
@@ -569,10 +662,10 @@ def evaluate_model(
     preds = model.predict(X_test)
     proba = model.predict_proba(X_test) if hasattr(model, "predict_proba") else None
 
-    acc      = accuracy_score(y_test, preds)
-    bal_acc  = balanced_accuracy_score(y_test, preds)
-    f1_w     = f1_score(y_test, preds, average="weighted",  zero_division=0)
-    f1_macro = f1_score(y_test, preds, average="macro",     zero_division=0)
+    acc = accuracy_score(y_test, preds)
+    bal_acc = balanced_accuracy_score(y_test, preds)
+    f1_w = f1_score(y_test, preds, average="weighted", zero_division=0)
+    f1_macro = f1_score(y_test, preds, average="macro", zero_division=0)
 
     # Per-class F1
     f1_per = f1_score(y_test, preds, average=None, zero_division=0)
@@ -583,19 +676,20 @@ def evaluate_model(
     print(f"  Balanced Accuracy : {bal_acc:.4f}  ← better metric")
     print(f"  F1 weighted       : {f1_w:.4f}")
     print(f"  F1 macro          : {f1_macro:.4f}  ← penalises ignoring minorities")
-    print(f"  Per-class F1      : " +
-          "  ".join(f"{c}:{v:.3f}" for c, v in zip(class_names, f1_per)))
+    print(
+        f"  Per-class F1      : " + "  ".join(f"{c}:{v:.3f}" for c, v in zip(class_names, f1_per))
+    )
     print(f"\n{classification_report(y_test, preds, target_names=class_names, zero_division=0)}")
 
     return {
-        "model_name":   model_name,
-        "accuracy":     acc,
+        "model_name": model_name,
+        "accuracy": acc,
         "bal_accuracy": bal_acc,
-        "f1_weighted":  f1_w,
-        "f1_macro":     f1_macro,
+        "f1_weighted": f1_w,
+        "f1_macro": f1_macro,
         "f1_per_class": f1_per,
-        "preds":        preds,
-        "proba":        proba,
+        "preds": preds,
+        "proba": proba,
     }
 
 
@@ -603,10 +697,11 @@ def evaluate_model(
 # 6.  VISUALISATION
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def plot_class_distribution(
-    y_original:  np.ndarray,
+    y_original: np.ndarray,
     y_resampled: dict,
-    save_path:   str = "class_distribution.png",
+    save_path: str = "class_distribution.png",
 ) -> None:
     """
     Before/after plots for each imbalance technique.
@@ -621,21 +716,28 @@ def plot_class_distribution(
         counts = Counter(y)
         labels = [CLASS_NAMES[k] for k in sorted(counts.keys())]
         values = [counts[k] for k in sorted(counts.keys())]
-        colors = PALETTE[:len(labels)]
-        bars   = ax.bar(labels, values, color=colors, alpha=0.85, edgecolor="white")
+        colors = PALETTE[: len(labels)]
+        bars = ax.bar(labels, values, color=colors, alpha=0.85, edgecolor="white")
         ax.bar_label(bars, padding=3, fontsize=9)
         ax.set_title(name.replace("_", " ").title(), fontweight="bold")
         ax.set_ylabel("Count")
         total = sum(values)
         ax.set_ylim(0, max(values) * 1.25)
         for bar, val in zip(bars, values):
-            ax.text(bar.get_x() + bar.get_width()/2,
-                    bar.get_height() * 0.5,
-                    f"{val/total:.0%}", ha="center", va="center",
-                    fontsize=8, color="white", fontweight="bold")
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() * 0.5,
+                f"{val/total:.0%}",
+                ha="center",
+                va="center",
+                fontsize=8,
+                color="white",
+                fontweight="bold",
+            )
 
-    plt.suptitle("Class Distribution — Before and After Resampling",
-                 fontsize=13, fontweight="bold", y=1.02)
+    plt.suptitle(
+        "Class Distribution — Before and After Resampling", fontsize=13, fontweight="bold", y=1.02
+    )
     plt.tight_layout()
     plt.savefig(save_path, dpi=130, bbox_inches="tight")
     plt.close()
@@ -643,9 +745,9 @@ def plot_class_distribution(
 
 
 def plot_gridsearch_heatmap(
-    search:    GridSearchCV,
-    param_x:   str,
-    param_y:   str,
+    search: GridSearchCV,
+    param_x: str,
+    param_y: str,
     save_path: str = "gridsearch_heatmap.png",
 ) -> None:
     """
@@ -665,13 +767,16 @@ def plot_gridsearch_heatmap(
 
     fig, ax = plt.subplots(figsize=(9, 5))
     sns.heatmap(
-        pivot, annot=True, fmt=".4f", cmap="YlOrRd",
-        linewidths=0.4, ax=ax,
+        pivot,
+        annot=True,
+        fmt=".4f",
+        cmap="YlOrRd",
+        linewidths=0.4,
+        ax=ax,
         annot_kws={"size": 9},
         cbar_kws={"label": "CV F1 (weighted)"},
     )
-    ax.set_title(f"GridSearchCV Heatmap — CV F1 by {param_x} vs {param_y}",
-                 fontweight="bold")
+    ax.set_title(f"GridSearchCV Heatmap — CV F1 by {param_x} vs {param_y}", fontweight="bold")
     ax.set_xlabel(param_x)
     ax.set_ylabel(param_y)
     plt.tight_layout()
@@ -682,9 +787,9 @@ def plot_gridsearch_heatmap(
 
 def plot_confusion_matrices(
     results_list: list[dict],
-    y_test:       np.ndarray,
-    class_names:  list = CLASS_NAMES,
-    save_path:    str = "confusion_matrices.png",
+    y_test: np.ndarray,
+    class_names: list = CLASS_NAMES,
+    save_path: str = "confusion_matrices.png",
 ) -> None:
     """Side-by-side normalised confusion matrices for all strategies."""
     n = len(results_list)
@@ -693,13 +798,20 @@ def plot_confusion_matrices(
         axes = [axes]
 
     for ax, res in zip(axes, results_list):
-        cm      = confusion_matrix(y_test, res["preds"], labels=range(len(class_names)))
+        cm = confusion_matrix(y_test, res["preds"], labels=range(len(class_names)))
         cm_norm = cm.astype(float) / cm.sum(axis=1, keepdims=True)
         sns.heatmap(
-            cm_norm, annot=cm, fmt="d", cmap="Blues",
-            xticklabels=class_names, yticklabels=class_names,
-            linewidths=0.4, ax=ax, annot_kws={"size": 11},
-            vmin=0, vmax=1,
+            cm_norm,
+            annot=cm,
+            fmt="d",
+            cmap="Blues",
+            xticklabels=class_names,
+            yticklabels=class_names,
+            linewidths=0.4,
+            ax=ax,
+            annot_kws={"size": 11},
+            vmin=0,
+            vmax=1,
         )
         f1 = res["f1_macro"]
         ax.set_title(f"{res['model_name']}\nMacro F1={f1:.3f}", fontweight="bold")
@@ -708,8 +820,12 @@ def plot_confusion_matrices(
         ax.set_xticklabels(class_names, rotation=20, ha="right")
         ax.set_yticklabels(class_names, rotation=0)
 
-    plt.suptitle("Confusion Matrices — Imbalance Strategies Compared",
-                 fontsize=13, fontweight="bold", y=1.02)
+    plt.suptitle(
+        "Confusion Matrices — Imbalance Strategies Compared",
+        fontsize=13,
+        fontweight="bold",
+        y=1.02,
+    )
     plt.tight_layout()
     plt.savefig(save_path, dpi=130, bbox_inches="tight")
     plt.close()
@@ -718,25 +834,26 @@ def plot_confusion_matrices(
 
 def plot_metrics_comparison(
     results_list: list[dict],
-    save_path:    str = "metrics_comparison.png",
+    save_path: str = "metrics_comparison.png",
 ) -> None:
     """Bar chart comparing all strategies on key metrics."""
-    names     = [r["model_name"] for r in results_list]
-    metrics   = [
-        ("accuracy",     "Accuracy\n(misleading!)"),
+    names = [r["model_name"] for r in results_list]
+    metrics = [
+        ("accuracy", "Accuracy\n(misleading!)"),
         ("bal_accuracy", "Balanced\nAccuracy"),
-        ("f1_weighted",  "F1\n(weighted)"),
-        ("f1_macro",     "F1\n(macro)"),
+        ("f1_weighted", "F1\n(weighted)"),
+        ("f1_macro", "F1\n(macro)"),
     ]
 
     fig, axes = plt.subplots(1, len(metrics), figsize=(16, 5))
     for ax, (metric, label) in zip(axes, metrics):
-        vals   = [r[metric] for r in results_list]
-        best   = max(vals)
+        vals = [r[metric] for r in results_list]
+        best = max(vals)
         colors = [PALETTE[0] if v == best else "#B4B2A9" for v in vals]
-        bars   = ax.bar(names, vals, color=colors, alpha=0.87, edgecolor="white")
-        ax.bar_label(bars, labels=[f"{v:.3f}" for v in vals],
-                     padding=3, fontsize=8, fontweight="bold")
+        bars = ax.bar(names, vals, color=colors, alpha=0.87, edgecolor="white")
+        ax.bar_label(
+            bars, labels=[f"{v:.3f}" for v in vals], padding=3, fontsize=8, fontweight="bold"
+        )
         ax.set_title(label, fontweight="bold")
         ax.set_ylim(0, 1.15)
         ax.tick_params(axis="x", rotation=30)
@@ -744,12 +861,20 @@ def plot_metrics_comparison(
         # Shade accuracy plot to emphasise it's unreliable
         if metric == "accuracy":
             ax.set_facecolor("#fff0f0")
-            ax.text(0.5, 0.05, "⚠ misleading for imbalanced data",
-                    transform=ax.transAxes, ha="center", fontsize=7,
-                    color="red", alpha=0.7)
+            ax.text(
+                0.5,
+                0.05,
+                "⚠ misleading for imbalanced data",
+                transform=ax.transAxes,
+                ha="center",
+                fontsize=7,
+                color="red",
+                alpha=0.7,
+            )
 
-    plt.suptitle("Imbalance Handling Strategies — Metric Comparison",
-                 fontsize=13, fontweight="bold", y=1.02)
+    plt.suptitle(
+        "Imbalance Handling Strategies — Metric Comparison", fontsize=13, fontweight="bold", y=1.02
+    )
     plt.tight_layout()
     plt.savefig(save_path, dpi=130, bbox_inches="tight")
     plt.close()
@@ -758,11 +883,11 @@ def plot_metrics_comparison(
 
 def plot_threshold_curve(
     model,
-    X_val:        np.ndarray,
-    y_val:        np.ndarray,
+    X_val: np.ndarray,
+    y_val: np.ndarray,
     target_class: int = 2,
-    class_names:  list = CLASS_NAMES,
-    save_path:    str = "threshold_curve.png",
+    class_names: list = CLASS_NAMES,
+    save_path: str = "threshold_curve.png",
 ) -> None:
     """
     F1 vs threshold curve for the minority class.
@@ -771,37 +896,42 @@ def plot_threshold_curve(
     if not hasattr(model, "predict_proba"):
         return
 
-    proba   = model.predict_proba(X_val)[:, target_class]
-    y_bin   = (y_val == target_class).astype(int)
+    proba = model.predict_proba(X_val)[:, target_class]
+    y_bin = (y_val == target_class).astype(int)
     threshs = np.arange(0.05, 0.95, 0.025)
     f1s, precs, recs = [], [], []
 
     for t in threshs:
         preds = (proba >= t).astype(int)
         if preds.sum() == 0:
-            f1s.append(0); precs.append(0); recs.append(0)
+            f1s.append(0)
+            precs.append(0)
+            recs.append(0)
             continue
         f1s.append(f1_score(y_bin, preds, zero_division=0))
-        precs.append(f1_score(y_bin, preds, average="binary",
-                               pos_label=1, zero_division=0))
+        precs.append(f1_score(y_bin, preds, average="binary", pos_label=1, zero_division=0))
         from sklearn.metrics import recall_score
+
         recs.append(recall_score(y_bin, preds, zero_division=0))
 
     best_idx = np.argmax(f1s)
-    fig, ax  = plt.subplots(figsize=(9, 4))
-    ax.plot(threshs, f1s,   color=PALETTE[0], linewidth=2, label="F1")
-    ax.plot(threshs, precs, color=PALETTE[1], linewidth=1.5,
-            linestyle="--", label="Precision")
-    ax.plot(threshs, recs,  color=PALETTE[2], linewidth=1.5,
-            linestyle=":",  label="Recall")
-    ax.axvline(threshs[best_idx], color="grey", linewidth=1.5, linestyle="-.",
-               label=f"Best threshold={threshs[best_idx]:.2f} (F1={f1s[best_idx]:.3f})")
-    ax.axvline(0.5, color="black", linewidth=0.8, linestyle="--", alpha=0.5,
-               label="Default threshold=0.5")
+    fig, ax = plt.subplots(figsize=(9, 4))
+    ax.plot(threshs, f1s, color=PALETTE[0], linewidth=2, label="F1")
+    ax.plot(threshs, precs, color=PALETTE[1], linewidth=1.5, linestyle="--", label="Precision")
+    ax.plot(threshs, recs, color=PALETTE[2], linewidth=1.5, linestyle=":", label="Recall")
+    ax.axvline(
+        threshs[best_idx],
+        color="grey",
+        linewidth=1.5,
+        linestyle="-.",
+        label=f"Best threshold={threshs[best_idx]:.2f} (F1={f1s[best_idx]:.3f})",
+    )
+    ax.axvline(
+        0.5, color="black", linewidth=0.8, linestyle="--", alpha=0.5, label="Default threshold=0.5"
+    )
     ax.set_xlabel("Decision Threshold")
     ax.set_ylabel("Score")
-    ax.set_title(f"Threshold Tuning — Class: '{class_names[target_class]}'",
-                 fontweight="bold")
+    ax.set_title(f"Threshold Tuning — Class: '{class_names[target_class]}'", fontweight="bold")
     ax.legend(fontsize=9)
     ax.set_xlim(0.05, 0.95)
     ax.set_ylim(0, 1.05)
@@ -818,18 +948,19 @@ def plot_threshold_curve(
 if __name__ == "__main__":
     from sklearn.model_selection import train_test_split
 
-    print("\n" + "="*62)
+    print("\n" + "=" * 62)
     print("  CLASS IMBALANCE + HYPERPARAMETER TUNING")
-    print("="*62)
+    print("=" * 62)
 
     # ── 1. Build imbalanced dataset ───────────────────────────────────────────
     print("\n[1] Building imbalanced dataset…")
     texts, y = build_imbalanced_dataset(n_total=600, ratios=(0.80, 0.15, 0.05))
     print(f"  Total: {len(y):,} reviews")
     print(f"  Class counts: {dict(Counter(y))}")
-    print(f"  Class ratios: " +
-          "  ".join(f"{CLASS_NAMES[k]}={v/len(y):.1%}"
-                    for k, v in sorted(Counter(y).items())))
+    print(
+        f"  Class ratios: "
+        + "  ".join(f"{CLASS_NAMES[k]}={v/len(y):.1%}" for k, v in sorted(Counter(y).items()))
+    )
 
     # ── 2. Feature extraction ─────────────────────────────────────────────────
     print("\n[2] Extracting features…")
@@ -840,23 +971,25 @@ if __name__ == "__main__":
         texts_tr, y_tr, test_size=0.15, random_state=42, stratify=y_tr
     )
     X_tr, X_te = extract_features(texts_tr, texts_te)
-    X_val, _   = extract_features(texts_val, texts_te)
+    X_val, _ = extract_features(texts_val, texts_te)
 
     # ── 3. Apply imbalance techniques ─────────────────────────────────────────
     print("\n[3] Applying imbalance handling techniques…")
-    handler  = ImbalanceHandler()
-    weights  = handler.compute_class_weights(y_tr)
+    handler = ImbalanceHandler()
+    weights = handler.compute_class_weights(y_tr)
 
     y_resampled = {}
 
     if IMBLEARN_OK:
-        X_smote, y_smote       = handler.apply_smote(X_tr, y_tr)
-        X_adasyn, y_adasyn     = handler.apply_adasyn(X_tr, y_tr)
-        X_under, y_under       = handler.apply_random_undersample(X_tr, y_tr)
-        X_st, y_st             = handler.apply_smote_tomek(X_tr, y_tr)
+        X_smote, y_smote = handler.apply_smote(X_tr, y_tr)
+        X_adasyn, y_adasyn = handler.apply_adasyn(X_tr, y_tr)
+        X_under, y_under = handler.apply_random_undersample(X_tr, y_tr)
+        X_st, y_st = handler.apply_smote_tomek(X_tr, y_tr)
         y_resampled = {
-            "smote": y_smote, "adasyn": y_adasyn,
-            "undersample": y_under, "smote_tomek": y_st,
+            "smote": y_smote,
+            "adasyn": y_adasyn,
+            "undersample": y_under,
+            "smote_tomek": y_st,
         }
 
     # ── 4. GridSearchCV hyperparameter tuning ─────────────────────────────────
@@ -879,78 +1012,82 @@ if __name__ == "__main__":
     # a) No handling (naive baseline)
     clf_naive = LogisticRegression(C=1, max_iter=500, random_state=42)
     clf_naive.fit(X_tr, y_tr)
-    all_results.append(evaluate_model(
-        clf_naive, X_te, y_te, "Naive (no handling)"
-    ))
+    all_results.append(evaluate_model(clf_naive, X_te, y_te, "Naive (no handling)"))
 
     # b) Class weights
     clf_weighted = LogisticRegression(
         C=lr_search.best_params_.get("C", 1.0),
-        class_weight="balanced", max_iter=500, random_state=42,
+        class_weight="balanced",
+        max_iter=500,
+        random_state=42,
     )
     clf_weighted.fit(X_tr, y_tr)
-    all_results.append(evaluate_model(
-        clf_weighted, X_te, y_te, "Class weights"
-    ))
+    all_results.append(evaluate_model(clf_weighted, X_te, y_te, "Class weights"))
 
     # c) Best GridSearch model
-    all_results.append(evaluate_model(
-        lr_search.best_estimator_, X_te, y_te, "GridSearch LR"
-    ))
+    all_results.append(evaluate_model(lr_search.best_estimator_, X_te, y_te, "GridSearch LR"))
 
     # d) Best RF model
-    all_results.append(evaluate_model(
-        rf_search.best_estimator_, X_te, y_te, "RandomSearch RF"
-    ))
+    all_results.append(evaluate_model(rf_search.best_estimator_, X_te, y_te, "RandomSearch RF"))
 
     # e) SMOTE + tuned LR
     if IMBLEARN_OK:
         clf_smote = LogisticRegression(
             C=lr_search.best_params_.get("C", 1.0),
-            class_weight="balanced", max_iter=500, random_state=42,
+            class_weight="balanced",
+            max_iter=500,
+            random_state=42,
         )
         clf_smote.fit(X_smote, y_smote)
-        all_results.append(evaluate_model(
-            clf_smote, X_te, y_te, "SMOTE + tuned LR"
-        ))
+        all_results.append(evaluate_model(clf_smote, X_te, y_te, "SMOTE + tuned LR"))
 
     # ── 6. Threshold tuning ───────────────────────────────────────────────────
     print("\n[6] Threshold tuning for minority class…")
-    best_thresh = handler.tune_threshold(
-        clf_weighted, X_val, y_val, target_class=2
-    )
+    best_thresh = handler.tune_threshold(clf_weighted, X_val, y_val, target_class=2)
 
     # ── 7. Final summary ──────────────────────────────────────────────────────
-    print("\n" + "="*62)
+    print("\n" + "=" * 62)
     print("  FINAL RESULTS SUMMARY")
-    print("="*62)
-    print(f"\n  {'Strategy':<25} {'Accuracy':>10} {'Bal.Acc':>10} "
-          f"{'F1-wt':>10} {'F1-mac':>10}")
-    print("  " + "─"*60)
+    print("=" * 62)
+    print(
+        f"\n  {'Strategy':<25} {'Accuracy':>10} {'Bal.Acc':>10} " f"{'F1-wt':>10} {'F1-mac':>10}"
+    )
+    print("  " + "─" * 60)
     for r in all_results:
-        print(f"  {r['model_name']:<25} {r['accuracy']:>10.4f} "
-              f"{r['bal_accuracy']:>10.4f} {r['f1_weighted']:>10.4f} "
-              f"{r['f1_macro']:>10.4f}")
+        print(
+            f"  {r['model_name']:<25} {r['accuracy']:>10.4f} "
+            f"{r['bal_accuracy']:>10.4f} {r['f1_weighted']:>10.4f} "
+            f"{r['f1_macro']:>10.4f}"
+        )
 
     best = max(all_results, key=lambda r: r["f1_macro"])
     print(f"\n  Best strategy (macro F1): {best['model_name']}")
     print(f"\n  KEY LESSON:")
-    print(f"  Accuracy alone: {all_results[0]['accuracy']:.1%} (naive) vs "
-          f"{best['accuracy']:.1%} (best)")
-    print(f"  Macro F1:       {all_results[0]['f1_macro']:.3f} (naive) vs "
-          f"{best['f1_macro']:.3f} (best) ← the real improvement")
+    print(
+        f"  Accuracy alone: {all_results[0]['accuracy']:.1%} (naive) vs "
+        f"{best['accuracy']:.1%} (best)"
+    )
+    print(
+        f"  Macro F1:       {all_results[0]['f1_macro']:.3f} (naive) vs "
+        f"{best['f1_macro']:.3f} (best) ← the real improvement"
+    )
 
     # ── 8. Plots ──────────────────────────────────────────────────────────────
     print("\n[8] Generating plots…")
     plot_class_distribution(y_tr, y_resampled, "class_distribution.png")
     plot_gridsearch_heatmap(
-        lr_search, param_x="C", param_y="class_weight",
+        lr_search,
+        param_x="C",
+        param_y="class_weight",
         save_path="gridsearch_heatmap.png",
     )
     plot_confusion_matrices(all_results[:4], y_te, save_path="confusion_matrices.png")
     plot_metrics_comparison(all_results, save_path="metrics_comparison.png")
     plot_threshold_curve(
-        clf_weighted, X_val, y_val, target_class=2,
+        clf_weighted,
+        X_val,
+        y_val,
+        target_class=2,
         save_path="threshold_curve.png",
     )
 

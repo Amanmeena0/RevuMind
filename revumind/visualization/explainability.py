@@ -30,15 +30,20 @@ Usage:
     explainer.plot_all(save_dir="shap_plots/")
 """
 
-import re, warnings, os
+import os
+import re
+import warnings
+
+import matplotlib
 import numpy as np
 import pandas as pd
-import matplotlib
+
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-import seaborn as sns
 from collections import Counter
+
+import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 from revumind.utils.constants import PALETTE, STOP_WORDS, configure_plotting
 
@@ -100,22 +105,23 @@ def build_dataset(n_per_class: int = 120) -> pd.DataFrame:
             if np.random.random() < 0.25:
                 additions = {
                     "positive": [" Great product!", " Highly recommend!", " Love it!"],
-                    "neutral":  [" Okay overall.", " Not bad.", " Acceptable."],
+                    "neutral": [" Okay overall.", " Not bad.", " Acceptable."],
                     "negative": [" Very bad!", " Terrible!", " Do not buy!"],
                 }
                 base += np.random.choice(additions[sentiment])
-            rows.append({
-                "review_text": base,
-                "sentiment":   sentiment,
-                "label":       label,
-                "star_rating": np.random.choice(
-                    [4,5] if sentiment=="positive" else
-                    [3]   if sentiment=="neutral"  else [1,2]
-                ),
-                "helpful_votes": np.random.randint(
-                    5, 50 if sentiment=="positive" else 20
-                ),
-            })
+            rows.append(
+                {
+                    "review_text": base,
+                    "sentiment": sentiment,
+                    "label": label,
+                    "star_rating": np.random.choice(
+                        [4, 5]
+                        if sentiment == "positive"
+                        else [3] if sentiment == "neutral" else [1, 2]
+                    ),
+                    "helpful_votes": np.random.randint(5, 50 if sentiment == "positive" else 20),
+                }
+            )
 
     df = pd.DataFrame(rows).sample(frac=1, random_state=42).reset_index(drop=True)
     print(f"  Dataset: {len(df):,} reviews | {df['label'].value_counts().to_dict()}")
@@ -125,6 +131,7 @@ def build_dataset(n_per_class: int = 120) -> pd.DataFrame:
 # ══════════════════════════════════════════════════════════════════════════════
 # 2.  FEATURE EXTRACTION — with named features for SHAP
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 def preprocess(text: str) -> str:
     text = text.lower()
@@ -143,44 +150,52 @@ class FeatureBuilder:
     """
 
     def __init__(self, max_tfidf: int = 200):
-        self.max_tfidf  = max_tfidf
+        self.max_tfidf = max_tfidf
         self.vectorizer = TfidfVectorizer(
-            max_features = max_tfidf,
-            ngram_range  = (1, 2),
-            min_df       = 2,
-            sublinear_tf = True,
+            max_features=max_tfidf,
+            ngram_range=(1, 2),
+            min_df=2,
+            sublinear_tf=True,
         )
-        self.scaler     = StandardScaler()
+        self.scaler = StandardScaler()
         self.feat_names = []
-        self._fitted    = False
+        self._fitted = False
 
     def _linguistic(self, texts: list) -> np.ndarray:
         """10 interpretable features that directly explain helpfulness."""
         feats = []
         for t in texts:
-            words  = t.split()
-            sents  = re.split(r"[.!?]+", t)
+            words = t.split()
+            sents = re.split(r"[.!?]+", t)
             unique = set(w.lower() for w in words)
-            feats.append([
-                len(words),
-                len(t),
-                np.mean([len(w) for w in words]) if words else 0,
-                len(unique) / max(len(words), 1),
-                t.count("!"),
-                t.count("?"),
-                sum(1 for w in words if w.isupper() and len(w) > 1),
-                int(bool(re.search(r"\d", t))),
-                int(bool(re.search(
-                    r"\b(however|but|although|despite|downside)\b", t.lower()
-                ))),
-                len(sents),
-            ])
+            feats.append(
+                [
+                    len(words),
+                    len(t),
+                    np.mean([len(w) for w in words]) if words else 0,
+                    len(unique) / max(len(words), 1),
+                    t.count("!"),
+                    t.count("?"),
+                    sum(1 for w in words if w.isupper() and len(w) > 1),
+                    int(bool(re.search(r"\d", t))),
+                    int(
+                        bool(re.search(r"\b(however|but|although|despite|downside)\b", t.lower()))
+                    ),
+                    len(sents),
+                ]
+            )
         return np.array(feats, dtype=np.float32)
 
     LING_NAMES = [
-        "ling_word_count", "ling_char_count", "ling_avg_word_len",
-        "ling_vocab_richness", "ling_exclamation_count", "ling_question_count",
-        "ling_caps_word_count", "ling_has_numbers", "ling_has_concession",
+        "ling_word_count",
+        "ling_char_count",
+        "ling_avg_word_len",
+        "ling_vocab_richness",
+        "ling_exclamation_count",
+        "ling_question_count",
+        "ling_caps_word_count",
+        "ling_has_numbers",
+        "ling_has_concession",
         "ling_sentence_count",
     ]
 
@@ -199,15 +214,17 @@ class FeatureBuilder:
         self._fitted = True
 
         X = np.hstack([X_tfidf, L_scaled])
-        print(f"  Features: {len(tfidf_names)} TF-IDF + {len(self.LING_NAMES)} linguistic = {X.shape[1]} total")
+        print(
+            f"  Features: {len(tfidf_names)} TF-IDF + {len(self.LING_NAMES)} linguistic = {X.shape[1]} total"
+        )
         return X
 
     def transform(self, texts: list) -> np.ndarray:
         assert self._fitted
         processed = [preprocess(t) for t in texts]
-        X_tfidf   = self.vectorizer.transform(processed).toarray()
-        L         = self._linguistic(texts)
-        L_scaled  = self.scaler.transform(L)
+        X_tfidf = self.vectorizer.transform(processed).toarray()
+        L = self._linguistic(texts)
+        L_scaled = self.scaler.transform(L)
         return np.hstack([X_tfidf, L_scaled])
 
 
@@ -215,14 +232,18 @@ class FeatureBuilder:
 # 3.  MODELS
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def train_logistic_regression(X_tr, y_tr) -> LogisticRegression:
     """
     Logistic Regression — best model for LinearExplainer (exact SHAP values).
     LinearExplainer is O(features) — instant even with 10k features.
     """
     clf = LogisticRegression(
-        C=1.0, max_iter=1000, class_weight="balanced",
-        random_state=42, multi_class="multinomial",
+        C=1.0,
+        max_iter=1000,
+        class_weight="balanced",
+        random_state=42,
+        multi_class="multinomial",
     )
     clf.fit(X_tr, y_tr)
     return clf
@@ -234,8 +255,11 @@ def train_random_forest(X_tr, y_tr) -> RandomForestClassifier:
     TreeExplainer exploits tree structure → exact SHAP in O(T*L²) per sample.
     """
     clf = RandomForestClassifier(
-        n_estimators=200, max_depth=15,
-        class_weight="balanced", random_state=42, n_jobs=-1,
+        n_estimators=200,
+        max_depth=15,
+        class_weight="balanced",
+        random_state=42,
+        n_jobs=-1,
     )
     clf.fit(X_tr, y_tr)
     return clf
@@ -244,6 +268,7 @@ def train_random_forest(X_tr, y_tr) -> RandomForestClassifier:
 # ══════════════════════════════════════════════════════════════════════════════
 # 4.  SHAP EXPLAINERS
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class SentimentExplainer:
     """
@@ -275,23 +300,24 @@ class SentimentExplainer:
 
     def __init__(self):
         self.feat_builder = FeatureBuilder(max_tfidf=200)
-        self.lr_model     = None
-        self.rf_model     = None
+        self.lr_model = None
+        self.rf_model = None
         self.lr_explainer = None
         self.rf_explainer = None
-        self.X_train      = None
-        self.X_test       = None
-        self.y_test       = None
-        self.texts_test   = None
-        self.feat_names   = None
+        self.X_train = None
+        self.X_test = None
+        self.y_test = None
+        self.texts_test = None
+        self.feat_names = None
         self.shap_values_lr = None
         self.shap_values_rf = None
 
-    def fit(self, df: pd.DataFrame, text_col: str = "review_text",
-            label_col: str = "label") -> "SentimentExplainer":
+    def fit(
+        self, df: pd.DataFrame, text_col: str = "review_text", label_col: str = "label"
+    ) -> "SentimentExplainer":
 
         texts = df[text_col].tolist()
-        y     = df[label_col].values
+        y = df[label_col].values
 
         # Split
         texts_tr, texts_te, y_tr, y_te = train_test_split(
@@ -301,8 +327,8 @@ class SentimentExplainer:
         # Features
         print("\n  Extracting features…")
         self.X_train = self.feat_builder.fit_transform(texts_tr)
-        self.X_test  = self.feat_builder.transform(texts_te)
-        self.y_test  = y_te
+        self.X_test = self.feat_builder.transform(texts_te)
+        self.y_test = y_te
         self.texts_test = texts_te
         self.feat_names = self.feat_builder.feat_names
 
@@ -310,14 +336,18 @@ class SentimentExplainer:
         print("  Training Logistic Regression…")
         self.lr_model = train_logistic_regression(self.X_train, y_tr)
         lr_preds = self.lr_model.predict(self.X_test)
-        print(f"  LR  → Acc={accuracy_score(y_te, lr_preds):.3f}  "
-              f"F1={f1_score(y_te, lr_preds, average='weighted'):.3f}")
+        print(
+            f"  LR  → Acc={accuracy_score(y_te, lr_preds):.3f}  "
+            f"F1={f1_score(y_te, lr_preds, average='weighted'):.3f}"
+        )
 
         print("  Training Random Forest…")
         self.rf_model = train_random_forest(self.X_train, y_tr)
         rf_preds = self.rf_model.predict(self.X_test)
-        print(f"  RF  → Acc={accuracy_score(y_te, rf_preds):.3f}  "
-              f"F1={f1_score(y_te, rf_preds, average='weighted'):.3f}")
+        print(
+            f"  RF  → Acc={accuracy_score(y_te, rf_preds):.3f}  "
+            f"F1={f1_score(y_te, rf_preds, average='weighted'):.3f}"
+        )
 
         if not SHAP_OK:
             print("  SHAP not installed — skipping explainer creation.")
@@ -354,10 +384,10 @@ class SentimentExplainer:
     # ── Single review explanation ─────────────────────────────────────────────
     def explain_single(
         self,
-        text:       str,
-        model:      str = "lr",
-        class_idx:  int = 2,    # 0=negative, 1=neutral, 2=positive
-        top_n:      int = 15,
+        text: str,
+        model: str = "lr",
+        class_idx: int = 2,  # 0=negative, 1=neutral, 2=positive
+        top_n: int = 15,
     ) -> dict:
         """
         Explain WHY the model gave a specific prediction to one review.
@@ -393,32 +423,35 @@ class SentimentExplainer:
         top_positive = [(n, v) for n, v in pairs_sorted if v > 0][:top_n]
         top_negative = [(n, v) for n, v in pairs_sorted if v < 0][:top_n]
 
-        print(f"\n  Review: \"{text[:80]}…\"")
-        print(f"  Prediction: {CLASS_NAMES[pred_class].upper()}  "
-              f"(prob: " + "  ".join(
-                  f"{CLASS_NAMES[i]}={p:.3f}" for i,p in enumerate(pred_proba)
-              ) + ")")
-        print(f"\n  Top features → {CLASS_NAMES[class_idx]} "
-              f"(SHAP > 0, push prediction UP):")
+        print(f'\n  Review: "{text[:80]}…"')
+        print(
+            f"  Prediction: {CLASS_NAMES[pred_class].upper()}  "
+            f"(prob: "
+            + "  ".join(f"{CLASS_NAMES[i]}={p:.3f}" for i, p in enumerate(pred_proba))
+            + ")"
+        )
+        print(f"\n  Top features → {CLASS_NAMES[class_idx]} " f"(SHAP > 0, push prediction UP):")
         for name, val in top_positive[:8]:
             bar = "█" * int(abs(val) * 200)
             clean = name.replace("tfidf_", "").replace("ling_", "[ling] ")
             print(f"    +{val:>7.4f}  {clean:<30}  {bar}")
 
-        print(f"\n  Top features → away from {CLASS_NAMES[class_idx]} "
-              f"(SHAP < 0, push prediction DOWN):")
+        print(
+            f"\n  Top features → away from {CLASS_NAMES[class_idx]} "
+            f"(SHAP < 0, push prediction DOWN):"
+        )
         for name, val in top_negative[:8]:
             bar = "█" * int(abs(val) * 200)
             clean = name.replace("tfidf_", "").replace("ling_", "[ling] ")
             print(f"    {val:>8.4f}  {clean:<30}  {bar}")
 
         return {
-            "text":          text,
-            "prediction":    CLASS_NAMES[pred_class],
-            "proba":         pred_proba,
-            "shap_values":   sv_for_class,
-            "top_positive":  top_positive,
-            "top_negative":  top_negative,
+            "text": text,
+            "prediction": CLASS_NAMES[pred_class],
+            "proba": pred_proba,
+            "shap_values": sv_for_class,
+            "top_positive": top_positive,
+            "top_negative": top_negative,
         }
 
 
@@ -426,12 +459,13 @@ class SentimentExplainer:
 # 5.  CUSTOM SHAP PLOTS (no shap library needed for some)
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def plot_global_importance(
     shap_values: list,
-    feat_names:  list,
+    feat_names: list,
     class_names: list = CLASS_NAMES,
-    top_n:       int  = 20,
-    save_path:   str  = "shap_global_importance.png",
+    top_n: int = 20,
+    save_path: str = "shap_global_importance.png",
 ) -> None:
     """
     Global feature importance: mean |SHAP value| per feature per class.
@@ -447,8 +481,7 @@ def plot_global_importance(
     else:
         sv_arr = shap_values
 
-    fig, axes = plt.subplots(1, len(class_names),
-                              figsize=(7 * len(class_names), 8))
+    fig, axes = plt.subplots(1, len(class_names), figsize=(7 * len(class_names), 8))
 
     for ax, cls_idx, cls_name in zip(axes, range(len(class_names)), class_names):
         if sv_arr.ndim == 3:
@@ -457,22 +490,24 @@ def plot_global_importance(
             mean_abs = np.abs(sv_arr[:, :, cls_idx]).mean(axis=0)
 
         # Top N features
-        top_idx   = np.argsort(mean_abs)[-top_n:][::-1]
-        top_vals  = mean_abs[top_idx]
-        top_names = [feat_names[i].replace("tfidf_", "")
-                                   .replace("ling_", "[ling] ")
-                     for i in top_idx]
+        top_idx = np.argsort(mean_abs)[-top_n:][::-1]
+        top_vals = mean_abs[top_idx]
+        top_names = [
+            feat_names[i].replace("tfidf_", "").replace("ling_", "[ling] ") for i in top_idx
+        ]
 
         color = PALETTE[cls_idx % len(PALETTE)]
-        bars  = ax.barh(top_names[::-1], top_vals[::-1],
-                        color=color, alpha=0.82, edgecolor="white")
+        bars = ax.barh(top_names[::-1], top_vals[::-1], color=color, alpha=0.82, edgecolor="white")
         ax.bar_label(bars, fmt="%.4f", padding=3, fontsize=7)
-        ax.set_title(f"Class: {cls_name.upper()}\nmean |SHAP|",
-                     fontweight="bold", fontsize=11)
+        ax.set_title(f"Class: {cls_name.upper()}\nmean |SHAP|", fontweight="bold", fontsize=11)
         ax.set_xlabel("Mean |SHAP value|")
 
-    plt.suptitle("Global Feature Importance (SHAP) — per Sentiment Class",
-                 fontsize=14, fontweight="bold", y=1.01)
+    plt.suptitle(
+        "Global Feature Importance (SHAP) — per Sentiment Class",
+        fontsize=14,
+        fontweight="bold",
+        y=1.01,
+    )
     plt.tight_layout()
     plt.savefig(save_path, dpi=130, bbox_inches="tight")
     plt.close()
@@ -481,11 +516,11 @@ def plot_global_importance(
 
 def plot_shap_summary_custom(
     shap_values: list,
-    X_test:      np.ndarray,
-    feat_names:  list,
-    class_idx:   int = 2,
-    top_n:       int = 20,
-    save_path:   str = "shap_summary.png",
+    X_test: np.ndarray,
+    feat_names: list,
+    class_idx: int = 2,
+    top_n: int = 20,
+    save_path: str = "shap_summary.png",
 ) -> None:
     """
     Beeswarm-style summary plot showing SHAP value distribution per feature.
@@ -497,29 +532,26 @@ def plot_shap_summary_custom(
     This tells you not just WHICH features matter, but HOW they affect predictions.
     """
     if isinstance(shap_values, list):
-        sv = shap_values[class_idx]   # (n_samples, n_features)
+        sv = shap_values[class_idx]  # (n_samples, n_features)
     else:
         sv = shap_values[:, :, class_idx]
 
     # Top N features by mean |SHAP|
-    mean_abs  = np.abs(sv).mean(axis=0)
-    top_idx   = np.argsort(mean_abs)[-top_n:]
-    sv_top    = sv[:, top_idx]
-    X_top     = X_test[:, top_idx]
-    names_top = [feat_names[i].replace("tfidf_","").replace("ling_","[ling] ")
-                 for i in top_idx]
+    mean_abs = np.abs(sv).mean(axis=0)
+    top_idx = np.argsort(mean_abs)[-top_n:]
+    sv_top = sv[:, top_idx]
+    X_top = X_test[:, top_idx]
+    names_top = [feat_names[i].replace("tfidf_", "").replace("ling_", "[ling] ") for i in top_idx]
 
     fig, ax = plt.subplots(figsize=(10, 9))
 
-    for row, (feat_sv, feat_x, name) in enumerate(
-        zip(sv_top.T, X_top.T, names_top)
-    ):
+    for row, (feat_sv, feat_x, name) in enumerate(zip(sv_top.T, X_top.T, names_top)):
         # Jitter y positions for beeswarm effect
         y_jitter = row + np.random.uniform(-0.25, 0.25, len(feat_sv))
 
         # Colour by feature value
         feat_norm = (feat_x - feat_x.min()) / (feat_x.max() - feat_x.min() + 1e-9)
-        colors    = plt.cm.RdBu_r(feat_norm)
+        colors = plt.cm.RdBu_r(feat_norm)
 
         ax.scatter(feat_sv, y_jitter, c=colors, s=12, alpha=0.6, linewidths=0)
 
@@ -534,8 +566,7 @@ def plot_shap_summary_custom(
     )
 
     # Colorbar
-    sm = plt.cm.ScalarMappable(cmap="RdBu_r",
-                                norm=plt.Normalize(vmin=0, vmax=1))
+    sm = plt.cm.ScalarMappable(cmap="RdBu_r", norm=plt.Normalize(vmin=0, vmax=1))
     sm.set_array([])
     cbar = plt.colorbar(sm, ax=ax, shrink=0.5, pad=0.01)
     cbar.set_label("Feature value (normalised)", fontsize=8)
@@ -550,9 +581,9 @@ def plot_shap_summary_custom(
 
 def plot_waterfall_single(
     shap_result: dict,
-    class_idx:   int = 2,
-    top_n:       int = 12,
-    save_path:   str = "shap_waterfall.png",
+    class_idx: int = 2,
+    top_n: int = 12,
+    save_path: str = "shap_waterfall.png",
 ) -> None:
     """
     Waterfall plot for ONE review: shows cumulative SHAP contribution.
@@ -564,39 +595,40 @@ def plot_waterfall_single(
 
     This is the most interpretable plot for explaining a SINGLE prediction.
     """
-    sv    = shap_result["shap_values"]
+    sv = shap_result["shap_values"]
     names = shap_result.get("feat_names", [f"F{i}" for i in range(len(sv))])
 
     # Sort by absolute SHAP
-    pairs   = sorted(zip(names, sv), key=lambda x: abs(x[1]), reverse=True)
-    top     = pairs[:top_n]
+    pairs = sorted(zip(names, sv), key=lambda x: abs(x[1]), reverse=True)
+    top = pairs[:top_n]
     rest_sv = sum(v for _, v in pairs[top_n:])
 
-    labels = [n.replace("tfidf_","").replace("ling_","[ling] ") for n,_ in top]
-    values = [v for _,v in top]
+    labels = [n.replace("tfidf_", "").replace("ling_", "[ling] ") for n, _ in top]
+    values = [v for _, v in top]
     if rest_sv != 0:
         labels.append(f"… {len(pairs)-top_n} other features")
         values.append(rest_sv)
 
     # Build cumulative waterfall
-    baseline  = 0.0
-    running   = baseline
+    baseline = 0.0
+    running = baseline
     lefts, widths, colors = [], [], []
     for v in values:
         if v >= 0:
             lefts.append(running)
             widths.append(v)
-            colors.append(PALETTE[0])   # green = positive push
+            colors.append(PALETTE[0])  # green = positive push
         else:
             lefts.append(running + v)
             widths.append(-v)
-            colors.append(PALETTE[1])   # red = negative push
+            colors.append(PALETTE[1])  # red = negative push
         running += v
 
     fig, ax = plt.subplots(figsize=(11, max(5, len(values) * 0.55)))
     y_pos = range(len(values))
-    ax.barh(list(y_pos), widths, left=lefts, color=colors,
-            alpha=0.85, edgecolor="white", height=0.65)
+    ax.barh(
+        list(y_pos), widths, left=lefts, color=colors, alpha=0.85, edgecolor="white", height=0.65
+    )
 
     # Value labels
     for i, (l, w, c) in enumerate(zip(lefts, widths, colors)):
@@ -611,7 +643,7 @@ def plot_waterfall_single(
     pred = shap_result.get("prediction", "")
     text_short = shap_result.get("text", "")[:60] + "…"
     ax.set_title(
-        f"SHAP Waterfall — Why predicted: {pred.upper()}\n\"{text_short}\"",
+        f'SHAP Waterfall — Why predicted: {pred.upper()}\n"{text_short}"',
         fontweight="bold",
     )
     ax.invert_yaxis()
@@ -628,9 +660,9 @@ def plot_waterfall_single(
 
 
 def plot_text_shap(
-    text:        str,
+    text: str,
     shap_result: dict,
-    save_path:   str = "shap_text.png",
+    save_path: str = "shap_text.png",
 ) -> None:
     """
     Word-level SHAP highlighting in the original review text.
@@ -638,16 +670,15 @@ def plot_text_shap(
 
     This is the most intuitive explanation for non-technical stakeholders.
     """
-    sv    = shap_result["shap_values"]
-    names = shap_result.get("feat_names",
-                             [f"F{i}" for i in range(len(sv))])
+    sv = shap_result["shap_values"]
+    names = shap_result.get("feat_names", [f"F{i}" for i in range(len(sv))])
 
     # Build word → SHAP mapping from TF-IDF features
     word_shap = {}
     for feat_name, shap_val in zip(names, sv):
         if feat_name.startswith("tfidf_"):
             word = feat_name.replace("tfidf_", "")
-            if " " not in word:   # only unigrams for word highlighting
+            if " " not in word:  # only unigrams for word highlighting
                 word_shap[word] = word_shap.get(word, 0) + shap_val
 
     if not word_shap:
@@ -667,43 +698,54 @@ def plot_text_shap(
 
     for token in tokens:
         word_lower = token.lower().strip(".,!?\"'")
-        shap_val   = word_shap.get(word_lower, 0)
+        shap_val = word_shap.get(word_lower, 0)
 
         # Colour: green if positive SHAP, red if negative, grey if neutral
         intensity = min(abs(shap_val) / (max_abs + 1e-9), 1.0)
         if shap_val > 0.001:
-            color = (1 - intensity * 0.7, 1, 1 - intensity * 0.7)   # green
+            color = (1 - intensity * 0.7, 1, 1 - intensity * 0.7)  # green
         elif shap_val < -0.001:
-            color = (1, 1 - intensity * 0.7, 1 - intensity * 0.7)   # red
+            color = (1, 1 - intensity * 0.7, 1 - intensity * 0.7)  # red
         else:
-            color = (0.95, 0.95, 0.95)   # light grey
+            color = (0.95, 0.95, 0.95)  # light grey
 
         # Estimate token width
         token_w = len(token) * 0.013 + 0.005
 
         # Wrap to next line if needed
         if line_width + token_w > max_line:
-            x = 0.01; y -= 0.3; line_width = 0
+            x = 0.01
+            y -= 0.3
+            line_width = 0
 
         if token.strip():
-            ax.text(x, y, token, ha="left", va="center",
-                    fontsize=11, fontfamily="monospace",
-                    bbox=dict(boxstyle="round,pad=0.2", facecolor=color,
-                              edgecolor="white", linewidth=0.5))
+            ax.text(
+                x,
+                y,
+                token,
+                ha="left",
+                va="center",
+                fontsize=11,
+                fontfamily="monospace",
+                bbox=dict(
+                    boxstyle="round,pad=0.2", facecolor=color, edgecolor="white", linewidth=0.5
+                ),
+            )
         else:
-            ax.text(x, y, token, ha="left", va="center",
-                    fontsize=11, fontfamily="monospace")
+            ax.text(x, y, token, ha="left", va="center", fontsize=11, fontfamily="monospace")
 
-        x          += token_w
+        x += token_w
         line_width += token_w
 
     pred = shap_result.get("prediction", "").upper()
     ax.set_title(
         f"Word-level SHAP — Predicted: {pred}  "
         f"|  Green=pushes toward {pred}  |  Red=pushes away",
-        fontweight="bold", fontsize=11,
+        fontweight="bold",
+        fontsize=11,
     )
-    ax.set_xlim(0, 1); ax.set_ylim(-0.2, 1.1)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(-0.2, 1.1)
 
     plt.tight_layout()
     plt.savefig(save_path, dpi=130, bbox_inches="tight")
@@ -713,9 +755,9 @@ def plot_text_shap(
 
 def plot_class_comparison(
     shap_values: list,
-    feat_names:  list,
-    top_n:       int = 15,
-    save_path:   str = "shap_class_comparison.png",
+    feat_names: list,
+    top_n: int = 15,
+    save_path: str = "shap_class_comparison.png",
 ) -> None:
     """
     Side-by-side diverging bars showing top features for each class.
@@ -724,8 +766,7 @@ def plot_class_comparison(
 
     Reveals which words are discriminative vs shared across classes.
     """
-    fig, axes = plt.subplots(1, len(CLASS_NAMES),
-                              figsize=(7 * len(CLASS_NAMES), 7))
+    fig, axes = plt.subplots(1, len(CLASS_NAMES), figsize=(7 * len(CLASS_NAMES), 7))
 
     for ax, cls_idx, cls_name in zip(axes, range(len(CLASS_NAMES)), CLASS_NAMES):
         if isinstance(shap_values, list):
@@ -733,24 +774,27 @@ def plot_class_comparison(
         else:
             sv = shap_values[:, :, cls_idx]
 
-        mean_shap = sv.mean(axis=0)   # signed mean — not |abs|
-        top_idx   = np.argsort(np.abs(mean_shap))[-top_n:][::-1]
-        vals      = mean_shap[top_idx]
-        names_top = [feat_names[i].replace("tfidf_","").replace("ling_","[ling] ")
-                     for i in top_idx]
+        mean_shap = sv.mean(axis=0)  # signed mean — not |abs|
+        top_idx = np.argsort(np.abs(mean_shap))[-top_n:][::-1]
+        vals = mean_shap[top_idx]
+        names_top = [
+            feat_names[i].replace("tfidf_", "").replace("ling_", "[ling] ") for i in top_idx
+        ]
 
         colors = [PALETTE[0] if v >= 0 else PALETTE[1] for v in vals]
-        ax.barh(names_top[::-1], vals[::-1], color=colors[::-1],
-                alpha=0.85, edgecolor="white")
+        ax.barh(names_top[::-1], vals[::-1], color=colors[::-1], alpha=0.85, edgecolor="white")
         ax.axvline(0, color="grey", linewidth=1, linestyle="--")
-        ax.set_title(f"Class: {cls_name.upper()}\nMean SHAP (signed)",
-                     fontweight="bold", fontsize=11)
+        ax.set_title(
+            f"Class: {cls_name.upper()}\nMean SHAP (signed)", fontweight="bold", fontsize=11
+        )
         ax.set_xlabel("Mean SHAP value")
         ax.tick_params(axis="y", labelsize=8)
 
     plt.suptitle(
         "SHAP Feature Impact per Class — Positive=pushes toward class | Negative=pushes away",
-        fontsize=13, fontweight="bold", y=1.01,
+        fontsize=13,
+        fontweight="bold",
+        y=1.01,
     )
     plt.tight_layout()
     plt.savefig(save_path, dpi=130, bbox_inches="tight")
@@ -759,13 +803,13 @@ def plot_class_comparison(
 
 
 def plot_decision_path(
-    shap_values:  list,
-    feat_names:   list,
-    texts:        list,
-    y_true:       np.ndarray,
-    class_idx:    int = 2,
-    n_samples:    int = 8,
-    save_path:    str = "shap_decision.png",
+    shap_values: list,
+    feat_names: list,
+    texts: list,
+    y_true: np.ndarray,
+    class_idx: int = 2,
+    n_samples: int = 8,
+    save_path: str = "shap_decision.png",
 ) -> None:
     """
     Decision plot: cumulative SHAP values for multiple reviews.
@@ -779,28 +823,33 @@ def plot_decision_path(
         sv = shap_values[:n_samples, :, class_idx]
 
     mean_abs = np.abs(sv).mean(axis=0)
-    top_idx  = np.argsort(mean_abs)[-15:][::-1]
-    sv_top   = sv[:, top_idx]
-    top_names= [feat_names[i].replace("tfidf_","").replace("ling_","[ling] ")
-                for i in top_idx]
+    top_idx = np.argsort(mean_abs)[-15:][::-1]
+    sv_top = sv[:, top_idx]
+    top_names = [feat_names[i].replace("tfidf_", "").replace("ling_", "[ling] ") for i in top_idx]
 
     # Cumulative sum left to right (features sorted by importance)
     cumsum = np.cumsum(sv_top, axis=1)
 
     fig, ax = plt.subplots(figsize=(12, 6))
-    label_map = {0:"negative", 1:"neutral", 2:"positive"}
-    color_map  = {0:PALETTE[1], 1:PALETTE[2], 2:PALETTE[0]}
+    label_map = {0: "negative", 1: "neutral", 2: "positive"}
+    color_map = {0: PALETTE[1], 1: PALETTE[2], 2: PALETTE[0]}
 
     for i in range(min(n_samples, len(sv))):
         true_lbl = y_true[i] if i < len(y_true) else 0
-        color    = color_map.get(true_lbl, PALETTE[3])
-        label    = f"Review {i+1} (true={CLASS_NAMES[true_lbl]})"
-        ax.plot(range(len(top_idx)), cumsum[i], color=color,
-                alpha=0.7, linewidth=1.5, marker="o", markersize=3,
-                label=label)
+        color = color_map.get(true_lbl, PALETTE[3])
+        label = f"Review {i+1} (true={CLASS_NAMES[true_lbl]})"
+        ax.plot(
+            range(len(top_idx)),
+            cumsum[i],
+            color=color,
+            alpha=0.7,
+            linewidth=1.5,
+            marker="o",
+            markersize=3,
+            label=label,
+        )
 
-    ax.axhline(0, color="grey", linewidth=0.8, linestyle="--",
-               label="Baseline")
+    ax.axhline(0, color="grey", linewidth=0.8, linestyle="--", label="Baseline")
     ax.set_xticks(range(len(top_idx)))
     ax.set_xticklabels(top_names, rotation=45, ha="right", fontsize=7)
     ax.set_ylabel(f"Cumulative SHAP → '{CLASS_NAMES[class_idx]}'")
@@ -821,14 +870,14 @@ def plot_decision_path(
 # ══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    print("\n" + "="*62)
+    print("\n" + "=" * 62)
     print("  SHAP EXPLAINABILITY — SENTIMENT PREDICTIONS")
-    print("="*62)
+    print("=" * 62)
 
     # ── 1. Build and train ────────────────────────────────────────────────────
     print("\n[1] Building dataset and training models…")
-    df      = build_dataset(n_per_class=100)
-    exp     = SentimentExplainer()
+    df = build_dataset(n_per_class=100)
+    exp = SentimentExplainer()
     exp.fit(df)
 
     # ── 2. Explain individual predictions ─────────────────────────────────────
@@ -853,24 +902,32 @@ if __name__ == "__main__":
     if SHAP_OK and exp.shap_values_lr is not None:
         # Global importance
         plot_global_importance(
-            exp.shap_values_lr, exp.feat_names,
+            exp.shap_values_lr,
+            exp.feat_names,
             save_path="shap_plots/shap_global_importance.png",
         )
         # Summary beeswarm for positive class
         plot_shap_summary_custom(
-            exp.shap_values_lr, exp.X_test, exp.feat_names,
-            class_idx=2, top_n=20,
+            exp.shap_values_lr,
+            exp.X_test,
+            exp.feat_names,
+            class_idx=2,
+            top_n=20,
             save_path="shap_plots/shap_summary.png",
         )
         # Class comparison
         plot_class_comparison(
-            exp.shap_values_lr, exp.feat_names,
+            exp.shap_values_lr,
+            exp.feat_names,
             save_path="shap_plots/shap_class_comparison.png",
         )
         # Decision plot
         plot_decision_path(
-            exp.shap_values_lr, exp.feat_names,
-            exp.texts_test, exp.y_test, class_idx=2,
+            exp.shap_values_lr,
+            exp.feat_names,
+            exp.texts_test,
+            exp.y_test,
+            class_idx=2,
             save_path="shap_plots/shap_decision.png",
         )
 
@@ -886,15 +943,17 @@ if __name__ == "__main__":
 
     # Text SHAP
     plot_text_shap(
-        example_reviews[0], single_results[0],
+        example_reviews[0],
+        single_results[0],
         save_path="shap_plots/shap_text_positive.png",
     )
     plot_text_shap(
-        example_reviews[1], single_results[1],
+        example_reviews[1],
+        single_results[1],
         save_path="shap_plots/shap_text_negative.png",
     )
 
-    print("\n" + "="*62)
+    print("\n" + "=" * 62)
     print("  DONE")
     print("  Install SHAP: pip install shap")
     print("  Key interview points:")
@@ -903,4 +962,4 @@ if __name__ == "__main__":
     print("  → TreeExplainer: exact, fast for RF/XGBoost")
     print("  → KernelExplainer: any model, slower (sampling)")
     print("  → Always explain on HELD-OUT test data")
-    print("="*62 + "\n")
+    print("=" * 62 + "\n")

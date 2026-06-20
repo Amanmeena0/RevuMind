@@ -20,43 +20,45 @@ Usage:
     result = ner.extract("I love my Samsung Galaxy S24. The camera is amazing!")
 """
 
-import re
 import json
+import re
 import warnings
-import pandas as pd
-import numpy as np
+
 import matplotlib
+import numpy as np
+import pandas as pd
+
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import seaborn as sns
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 warnings.filterwarnings("ignore")
 
 # ── spaCy ─────────────────────────────────────────────────────────────────────
 import spacy
+from spacy.language import Language
 from spacy.matcher import Matcher, PhraseMatcher
 from spacy.tokens import Span
-from spacy.language import Language
 
 # Download model if needed
 try:
     nlp = spacy.load("en_core_web_sm")
 except OSError:
-    import subprocess, sys
-    subprocess.run([sys.executable, "-m", "spacy", "download", "en_core_web_sm"],
-                   check=True)
+    import subprocess
+    import sys
+
+    subprocess.run([sys.executable, "-m", "spacy", "download", "en_core_web_sm"], check=True)
     nlp = spacy.load("en_core_web_sm")
 
 print(f"spaCy version: {spacy.__version__} | Model: en_core_web_sm")
 
 # ── Colour palette ────────────────────────────────────────────────────────────
-PALETTE   = ["#5DCAA5","#378ADD","#EF9F27","#D85A30","#7F77DD",
-             "#D4537E","#97C459","#888780"]
+PALETTE = ["#5DCAA5", "#378ADD", "#EF9F27", "#D85A30", "#7F77DD", "#D4537E", "#97C459", "#888780"]
 sns.set_theme(style="whitegrid", font_scale=1.05)
-plt.rcParams.update({"figure.dpi": 130, "axes.spines.top": False,
-                     "axes.spines.right": False})
+plt.rcParams.update({"figure.dpi": 130, "axes.spines.top": False, "axes.spines.right": False})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -66,52 +68,106 @@ plt.rcParams.update({"figure.dpi": 130, "axes.spines.top": False,
 # Known brands — used for PhraseMatcher and EntityRuler
 KNOWN_BRANDS = [
     # Electronics
-    "Samsung","Apple","Sony","LG","OnePlus","Xiaomi","Realme","Oppo","Vivo",
-    "Motorola","Nokia","Huawei","Google","Microsoft","Dell","HP","Lenovo","Asus",
-    "Acer","Toshiba","Panasonic","Philips","Bose","JBL","Sennheiser","boAt",
-    "Noise","Boat","Skullcandy","Jabra","Anker","Portronics","Ambrane",
+    "Samsung",
+    "Apple",
+    "Sony",
+    "LG",
+    "OnePlus",
+    "Xiaomi",
+    "Realme",
+    "Oppo",
+    "Vivo",
+    "Motorola",
+    "Nokia",
+    "Huawei",
+    "Google",
+    "Microsoft",
+    "Dell",
+    "HP",
+    "Lenovo",
+    "Asus",
+    "Acer",
+    "Toshiba",
+    "Panasonic",
+    "Philips",
+    "Bose",
+    "JBL",
+    "Sennheiser",
+    "boAt",
+    "Noise",
+    "Boat",
+    "Skullcandy",
+    "Jabra",
+    "Anker",
+    "Portronics",
+    "Ambrane",
     # Appliances
-    "Whirlpool","IFB","Bosch","Godrej","Haier","Voltas","Daikin","Blue Star",
-    "Prestige","Butterfly","Havells","Bajaj","Usha","Orient","Crompton",
+    "Whirlpool",
+    "IFB",
+    "Bosch",
+    "Godrej",
+    "Haier",
+    "Voltas",
+    "Daikin",
+    "Blue Star",
+    "Prestige",
+    "Butterfly",
+    "Havells",
+    "Bajaj",
+    "Usha",
+    "Orient",
+    "Crompton",
     # E-commerce
-    "Amazon","Flipkart","Myntra","Meesho","Nykaa","Snapdeal",
+    "Amazon",
+    "Flipkart",
+    "Myntra",
+    "Meesho",
+    "Nykaa",
+    "Snapdeal",
     # General
-    "Nike","Adidas","Puma","Reebok","Levi","H&M","Zara","IKEA",
+    "Nike",
+    "Adidas",
+    "Puma",
+    "Reebok",
+    "Levi",
+    "H&M",
+    "Zara",
+    "IKEA",
 ]
 
 # Product model number patterns (regex)
 MODEL_PATTERNS = [
-    r"\b[A-Z]{1,5}[\s\-]?\d{2,6}[A-Za-z]?\b",       # S24, Galaxy A54, RT-AC68U
-    r"\b[A-Z][a-z]+\s+[A-Z]\d{1,3}\b",                # iPhone X, Pixel 8
-    r"\b\d{1,2}th\s+[Gg]en(?:eration)?\b",             # 5th Generation
-    r"\bGen\s*\d\b",                                    # Gen 2, Gen3
-    r"\bv\d+(?:\.\d+)*\b",                             # v2.0, v3.1.2
-    r"\b(?:Pro|Max|Ultra|Plus|Lite|Mini|SE|Air|Note)\b",# product tiers
+    r"\b[A-Z]{1,5}[\s\-]?\d{2,6}[A-Za-z]?\b",  # S24, Galaxy A54, RT-AC68U
+    r"\b[A-Z][a-z]+\s+[A-Z]\d{1,3}\b",  # iPhone X, Pixel 8
+    r"\b\d{1,2}th\s+[Gg]en(?:eration)?\b",  # 5th Generation
+    r"\bGen\s*\d\b",  # Gen 2, Gen3
+    r"\bv\d+(?:\.\d+)*\b",  # v2.0, v3.1.2
+    r"\b(?:Pro|Max|Ultra|Plus|Lite|Mini|SE|Air|Note)\b",  # product tiers
 ]
 
 # Entity label mapping for display
 LABEL_COLORS = {
-    "BRAND":    "#5DCAA5",
-    "PRODUCT":  "#378ADD",
-    "ORG":      "#7F77DD",
-    "MONEY":    "#EF9F27",
+    "BRAND": "#5DCAA5",
+    "PRODUCT": "#378ADD",
+    "ORG": "#7F77DD",
+    "MONEY": "#EF9F27",
     "QUANTITY": "#D85A30",
-    "GPE":      "#D4537E",
-    "MODEL":    "#97C459",
-    "FEATURE":  "#888780",
+    "GPE": "#D4537E",
+    "MODEL": "#97C459",
+    "FEATURE": "#888780",
 }
 
 # Product feature keywords (aspect extraction)
 FEATURE_ASPECTS = {
-    "battery":    ["battery","charge","charging","mah","life","drain","fast charge"],
-    "camera":     ["camera","photo","picture","video","lens","megapixel","mp","zoom","selfie"],
-    "display":    ["screen","display","amoled","lcd","resolution","refresh","brightness"],
-    "sound":      ["sound","audio","speaker","bass","volume","noise","headphone","earphone"],
-    "performance":["performance","speed","fast","lag","processor","ram","storage","hang"],
-    "build":      ["build","quality","design","material","plastic","metal","glass","weight"],
-    "price":      ["price","value","cost","worth","money","affordable","expensive","cheap"],
-    "delivery":   ["delivery","shipping","packaging","arrived","box","damage","courier"],
-    "software":   ["software","update","ui","ux","interface","app","bloatware","os"],
+    "battery": ["battery", "charge", "charging", "mah", "life", "drain", "fast charge"],
+    "camera": ["camera", "photo", "picture", "video", "lens", "megapixel", "mp", "zoom", "selfie"],
+    "display": ["screen", "display", "amoled", "lcd", "resolution", "refresh", "brightness"],
+    "sound": ["sound", "audio", "speaker", "bass", "volume", "noise", "headphone", "earphone"],
+    "performance": ["performance", "speed", "fast", "lag", "processor", "ram", "storage", "hang"],
+    "build": ["build", "quality", "design", "material", "plastic", "metal", "glass", "weight"],
+    "price": ["price", "value", "cost", "worth", "money", "affordable", "expensive", "cheap"],
+    "delivery": ["delivery", "shipping", "packaging", "arrived", "box", "damage", "courier"],
+    "software": ["software", "update", "ui", "ux", "interface", "app", "bloatware", "os"],
 }
 
 
@@ -119,33 +175,35 @@ FEATURE_ASPECTS = {
 # 1.  ENTITY RESULT DATACLASS
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 @dataclass
 class Entity:
-    text:       str
-    label:      str        # BRAND, PRODUCT, ORG, MODEL, FEATURE, ...
-    source:     str        # "spacy", "phrase_matcher", "entity_ruler", "regex"
+    text: str
+    label: str  # BRAND, PRODUCT, ORG, MODEL, FEATURE, ...
+    source: str  # "spacy", "phrase_matcher", "entity_ruler", "regex"
     start_char: int = 0
-    end_char:   int = 0
+    end_char: int = 0
     confidence: float = 1.0
-    context:    str = ""   # surrounding words for disambiguation
+    context: str = ""  # surrounding words for disambiguation
 
 
 @dataclass
 class NERResult:
-    original_text:  str
-    entities:       list[Entity] = field(default_factory=list)
-    brands:         list[str]    = field(default_factory=list)
-    products:       list[str]    = field(default_factory=list)
-    model_numbers:  list[str]    = field(default_factory=list)
-    orgs:           list[str]    = field(default_factory=list)
-    money:          list[str]    = field(default_factory=list)
-    aspects:        dict         = field(default_factory=dict)
-    entity_count:   int          = 0
+    original_text: str
+    entities: list[Entity] = field(default_factory=list)
+    brands: list[str] = field(default_factory=list)
+    products: list[str] = field(default_factory=list)
+    model_numbers: list[str] = field(default_factory=list)
+    orgs: list[str] = field(default_factory=list)
+    money: list[str] = field(default_factory=list)
+    aspects: dict = field(default_factory=dict)
+    entity_count: int = 0
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 2.  CUSTOM PIPELINE COMPONENTS
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 def build_phrase_matcher(nlp_model, brands: list[str]) -> PhraseMatcher:
     """
@@ -171,9 +229,9 @@ def build_entity_ruler(nlp_model, brands: list[str]) -> "EntityRuler":
         patterns.append({"label": "ORG", "pattern": brand})
         # With common suffixes
         for suffix in ["Inc", "Ltd", "Corp", "Electronics", "India"]:
-            patterns.append({"label": "ORG",
-                             "pattern": [{"LOWER": brand.lower()},
-                                         {"LOWER": suffix.lower()}]})
+            patterns.append(
+                {"label": "ORG", "pattern": [{"LOWER": brand.lower()}, {"LOWER": suffix.lower()}]}
+            )
     ruler.add_patterns(patterns)
     return ruler
 
@@ -206,7 +264,7 @@ def extract_aspects(text: str) -> dict[str, list[str]]:
     text_lower = text.lower()
     found = {}
     for aspect, keywords in FEATURE_ASPECTS.items():
-        matched = [kw for kw in keywords if re.search(r'\b'+re.escape(kw)+r'\b', text_lower)]
+        matched = [kw for kw in keywords if re.search(r"\b" + re.escape(kw) + r"\b", text_lower)]
         if matched:
             found[aspect] = matched
     return found
@@ -215,7 +273,7 @@ def extract_aspects(text: str) -> dict[str, list[str]]:
 def get_entity_context(text: str, start: int, end: int, window: int = 30) -> str:
     """Get surrounding words for context/disambiguation."""
     ctx_start = max(0, start - window)
-    ctx_end   = min(len(text), end + window)
+    ctx_end = min(len(text), end + window)
     ctx = text[ctx_start:ctx_end]
     return f"...{ctx}..."
 
@@ -223,6 +281,7 @@ def get_entity_context(text: str, start: int, end: int, window: int = 30) -> str
 # ══════════════════════════════════════════════════════════════════════════════
 # 3.  MAIN NER PIPELINE CLASS
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 class ProductNERPipeline:
     """
@@ -241,13 +300,13 @@ class ProductNERPipeline:
 
     def __init__(
         self,
-        brands:            list[str] = KNOWN_BRANDS,
-        min_entity_length: int       = 2,
-        deduplicate:       bool      = True,
+        brands: list[str] = KNOWN_BRANDS,
+        min_entity_length: int = 2,
+        deduplicate: bool = True,
     ):
-        self.brands            = brands
-        self.min_len           = min_entity_length
-        self.deduplicate       = deduplicate
+        self.brands = brands
+        self.min_len = min_entity_length
+        self.deduplicate = deduplicate
 
         # Load fresh spaCy model (without entity ruler initially)
         self.nlp = spacy.load("en_core_web_sm")
@@ -257,8 +316,7 @@ class ProductNERPipeline:
         ruler_patterns = []
         for brand in brands:
             ruler_patterns.append({"label": "ORG", "pattern": brand})
-            ruler_patterns.append({"label": "ORG",
-                                   "pattern": [{"LOWER": brand.lower()}]})
+            ruler_patterns.append({"label": "ORG", "pattern": [{"LOWER": brand.lower()}]})
         ruler.add_patterns(ruler_patterns)
 
         # Build phrase matcher for secondary matching
@@ -286,15 +344,17 @@ class ProductNERPipeline:
             # Map spaCy labels to our taxonomy
             label = self._map_label(ent.label_)
             context = get_entity_context(text, ent.start_char, ent.end_char)
-            all_entities.append(Entity(
-                text       = ent.text.strip(),
-                label      = label,
-                source     = "spacy+ruler",
-                start_char = ent.start_char,
-                end_char   = ent.end_char,
-                confidence = 0.9,
-                context    = context,
-            ))
+            all_entities.append(
+                Entity(
+                    text=ent.text.strip(),
+                    label=label,
+                    source="spacy+ruler",
+                    start_char=ent.start_char,
+                    end_char=ent.end_char,
+                    confidence=0.9,
+                    context=context,
+                )
+            )
 
         # ── Layer 3: PhraseMatcher for additional brand hits ──────────────────
         matches = self.phrase_matcher(doc)
@@ -302,30 +362,34 @@ class ProductNERPipeline:
         for match_id, start, end in matches:
             span = doc[start:end]
             if (span.start_char, span.end_char) not in existing_spans:
-                all_entities.append(Entity(
-                    text       = span.text.strip(),
-                    label      = "BRAND",
-                    source     = "phrase_matcher",
-                    start_char = span.start_char,
-                    end_char   = span.end_char,
-                    confidence = 1.0,
-                    context    = get_entity_context(text, span.start_char, span.end_char),
-                ))
+                all_entities.append(
+                    Entity(
+                        text=span.text.strip(),
+                        label="BRAND",
+                        source="phrase_matcher",
+                        start_char=span.start_char,
+                        end_char=span.end_char,
+                        confidence=1.0,
+                        context=get_entity_context(text, span.start_char, span.end_char),
+                    )
+                )
                 existing_spans.add((span.start_char, span.end_char))
 
         # ── Layer 4: Regex for model numbers ─────────────────────────────────
         model_hits = extract_model_numbers(text)
         for model_text, start, end in model_hits:
             if (start, end) not in existing_spans and len(model_text.strip()) > 1:
-                all_entities.append(Entity(
-                    text       = model_text.strip(),
-                    label      = "MODEL",
-                    source     = "regex",
-                    start_char = start,
-                    end_char   = end,
-                    confidence = 0.85,
-                    context    = get_entity_context(text, start, end),
-                ))
+                all_entities.append(
+                    Entity(
+                        text=model_text.strip(),
+                        label="MODEL",
+                        source="regex",
+                        start_char=start,
+                        end_char=end,
+                        confidence=0.85,
+                        context=get_entity_context(text, start, end),
+                    )
+                )
 
         # ── Layer 5: Aspect extraction ────────────────────────────────────────
         result.aspects = extract_aspects(text)
@@ -357,17 +421,17 @@ class ProductNERPipeline:
     def _map_label(self, spacy_label: str) -> str:
         """Translate spaCy's generic labels to our product taxonomy."""
         mapping = {
-            "ORG":      "BRAND",
-            "PRODUCT":  "PRODUCT",
-            "GPE":      "GPE",
-            "LOC":      "GPE",
-            "MONEY":    "MONEY",
+            "ORG": "BRAND",
+            "PRODUCT": "PRODUCT",
+            "GPE": "GPE",
+            "LOC": "GPE",
+            "MONEY": "MONEY",
             "QUANTITY": "QUANTITY",
             "CARDINAL": "QUANTITY",
-            "PERSON":   "PERSON",
-            "DATE":     "DATE",
-            "NORP":     "ORG",
-            "FAC":      "PRODUCT",
+            "PERSON": "PERSON",
+            "DATE": "DATE",
+            "NORP": "ORG",
+            "FAC": "PRODUCT",
             "WORK_OF_ART": "PRODUCT",
         }
         return mapping.get(spacy_label, spacy_label)
@@ -400,7 +464,7 @@ class ProductNERPipeline:
     # ── Batch processing ──────────────────────────────────────────────────────
     def process_dataframe(
         self,
-        df:       pd.DataFrame,
+        df: pd.DataFrame,
         text_col: str = "review_text",
         batch_size: int = 50,
     ) -> pd.DataFrame:
@@ -413,17 +477,19 @@ class ProductNERPipeline:
         rows = []
         for i, text in enumerate(df[text_col].fillna(""), 1):
             r = self.extract(str(text))
-            rows.append({
-                "brands":        " | ".join(r.brands),
-                "products":      " | ".join(r.products),
-                "model_numbers": " | ".join(r.model_numbers),
-                "money_mentions":" | ".join(r.money),
-                "aspects":       " | ".join(r.aspects.keys()),
-                "entity_count":  r.entity_count,
-                "has_brand":     len(r.brands) > 0,
-                "brand_count":   len(r.brands),
-                "top_brand":     r.brands[0] if r.brands else "",
-            })
+            rows.append(
+                {
+                    "brands": " | ".join(r.brands),
+                    "products": " | ".join(r.products),
+                    "model_numbers": " | ".join(r.model_numbers),
+                    "money_mentions": " | ".join(r.money),
+                    "aspects": " | ".join(r.aspects.keys()),
+                    "entity_count": r.entity_count,
+                    "has_brand": len(r.brands) > 0,
+                    "brand_count": len(r.brands),
+                    "top_brand": r.brands[0] if r.brands else "",
+                }
+            )
             if i % 100 == 0:
                 print(f"    {i}/{len(df)} done…")
 
@@ -441,7 +507,7 @@ class ProductNERPipeline:
         last = 0
         for ent in result.entities:
             # Text before this entity
-            html.append(text[last:ent.start_char].replace("\n", "<br>"))
+            html.append(text[last : ent.start_char].replace("\n", "<br>"))
             color = LABEL_COLORS.get(ent.label, "#cccccc")
             html.append(
                 f"<mark style='background:{color}22;border:1.5px solid {color};"
@@ -464,9 +530,10 @@ class ProductNERPipeline:
 # 4.  ANALYSIS HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def brand_sentiment_analysis(
     df: pd.DataFrame,
-    brand_col:     str = "brands",
+    brand_col: str = "brands",
     sentiment_col: str = "vader_compound",
 ) -> pd.DataFrame:
     """
@@ -482,11 +549,13 @@ def brand_sentiment_analysis(
     if not rows:
         return pd.DataFrame()
     brand_df = pd.DataFrame(rows)
-    return (brand_df.groupby("brand")["sentiment"]
-            .agg(["mean", "count", "std"])
-            .rename(columns={"mean":"avg_sentiment","count":"review_count","std":"sentiment_std"})
-            .sort_values("review_count", ascending=False)
-            .round(3))
+    return (
+        brand_df.groupby("brand")["sentiment"]
+        .agg(["mean", "count", "std"])
+        .rename(columns={"mean": "avg_sentiment", "count": "review_count", "std": "sentiment_std"})
+        .sort_values("review_count", ascending=False)
+        .round(3)
+    )
 
 
 def entity_cooccurrence(
@@ -505,14 +574,16 @@ def entity_cooccurrence(
             for j in range(i + 1, len(brands)):
                 pair = tuple(sorted([brands[i], brands[j]]))
                 pairs[pair] += 1
-    rows = [{"brand_1": a, "brand_2": b, "co_mentions": c}
-            for (a, b), c in pairs.most_common(top_n)]
+    rows = [
+        {"brand_1": a, "brand_2": b, "co_mentions": c} for (a, b), c in pairs.most_common(top_n)
+    ]
     return pd.DataFrame(rows)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 5.  VISUALISATION
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 def plot_entity_distribution(
     results: list[NERResult],
@@ -561,8 +632,9 @@ def plot_top_brands(
     labels, counts = zip(*top)
 
     fig, ax = plt.subplots(figsize=(9, max(4, len(labels) * 0.45)))
-    bars = ax.barh(list(labels)[::-1], list(counts)[::-1],
-                   color=PALETTE[0], alpha=0.85, edgecolor="white")
+    bars = ax.barh(
+        list(labels)[::-1], list(counts)[::-1], color=PALETTE[0], alpha=0.85, edgecolor="white"
+    )
     ax.bar_label(bars, padding=4, fontsize=9)
     ax.set_title(f"Top {top_n} Most Mentioned Brands", fontweight="bold", fontsize=13)
     ax.set_xlabel("Mention Count")
@@ -586,7 +658,7 @@ def plot_aspect_frequency(
         return
 
     aspects, counts = zip(*aspect_counter.most_common())
-    colors = PALETTE[:len(aspects)]
+    colors = PALETTE[: len(aspects)]
 
     fig, ax = plt.subplots(figsize=(10, 4))
     bars = ax.bar(aspects, counts, color=colors, alpha=0.85, edgecolor="white")
@@ -611,22 +683,27 @@ def plot_brand_sentiment(
         return
 
     top = brand_sent_df.head(top_n)
-    colors = ["#5DCAA5" if s >= 0 else "#D85A30"
-              for s in top["avg_sentiment"]]
+    colors = ["#5DCAA5" if s >= 0 else "#D85A30" for s in top["avg_sentiment"]]
 
     fig, axes = plt.subplots(1, 2, figsize=(14, max(4, len(top) * 0.5)))
 
     # Sentiment
-    bars = axes[0].barh(top.index[::-1], top["avg_sentiment"][::-1],
-                        color=colors[::-1], alpha=0.85, edgecolor="white")
+    bars = axes[0].barh(
+        top.index[::-1],
+        top["avg_sentiment"][::-1],
+        color=colors[::-1],
+        alpha=0.85,
+        edgecolor="white",
+    )
     axes[0].axvline(0, color="grey", linewidth=0.8)
     axes[0].bar_label(bars, fmt="%.3f", padding=4, fontsize=9)
     axes[0].set_title("Avg Sentiment Score by Brand", fontweight="bold")
     axes[0].set_xlabel("Avg VADER compound score")
 
     # Review count
-    axes[1].barh(top.index[::-1], top["review_count"][::-1],
-                 color=PALETTE[1], alpha=0.85, edgecolor="white")
+    axes[1].barh(
+        top.index[::-1], top["review_count"][::-1], color=PALETTE[1], alpha=0.85, edgecolor="white"
+    )
     axes[1].set_title("Review Count by Brand", fontweight="bold")
     axes[1].set_xlabel("Number of reviews")
 
@@ -641,17 +718,27 @@ def plot_brand_sentiment(
 # PRETTY PRINTER
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 def print_ner_result(result: NERResult) -> None:
     sep = "─" * 62
     label_icons = {
-        "BRAND":"🏷 ","PRODUCT":"📦","MODEL":"🔢","MONEY":"💰",
-        "GPE":"📍","PERSON":"👤","DATE":"📅","QUANTITY":"🔢","ORG":"🏢",
+        "BRAND": "🏷 ",
+        "PRODUCT": "📦",
+        "MODEL": "🔢",
+        "MONEY": "💰",
+        "GPE": "📍",
+        "PERSON": "👤",
+        "DATE": "📅",
+        "QUANTITY": "🔢",
+        "ORG": "🏢",
     }
     print(f"\n{'═'*62}")
     print(f"  NER RESULT")
     print(f"{'═'*62}")
-    print(f"  Text: \"{result.original_text[:100]}"
-          f"{'…' if len(result.original_text)>100 else ''}\"")
+    print(
+        f'  Text: "{result.original_text[:100]}'
+        f"{'…' if len(result.original_text)>100 else ''}\""
+    )
     print(f"  Entities found: {result.entity_count}")
     print(sep)
 
@@ -689,22 +776,18 @@ SAMPLE_REVIEWS = [
     "The camera is simply the best I've ever used. The 200MP sensor captures "
     "incredible detail. Paid ₹1,24,999 for it and every rupee is worth it. "
     "Battery lasts all day easily. Much better than my old iPhone 14 Pro.",
-
     "Bought boAt Airdopes 141 for ₹999 during Amazon sale. Sound quality is "
     "surprisingly good for the price. Bass is decent and the connection to my "
     "OnePlus Nord CE 3 is instant. Battery life of 42 hours total is amazing. "
     "Build quality feels a bit plastic but that's expected at this price point.",
-
     "Sony WH-1000XM5 headphones are absolutely phenomenal. Noise cancellation "
     "is leagues ahead of Bose QC45. The Bluetooth 5.2 connects instantly. "
     "Bought from Flipkart for ₹26,990 with 2 year warranty. The 30-hour "
     "battery life and foldable design make this perfect for travel.",
-
     "Very disappointed with this Xiaomi Redmi Note 13 Pro. The display looks "
     "good but performance lags after a few weeks. Heating issue is real — "
     "even during basic tasks. For ₹24,999 I expected much better. "
     "My previous Realme GT Neo 5 was far superior in terms of speed and build.",
-
     "The Apple AirPods Pro 2nd Gen with USB-C are incredible. The Active Noise "
     "Cancellation has improved massively over Gen 1. Transparency mode sounds "
     "completely natural. Connecting to my MacBook Pro M3 and iPhone 15 Pro Max "
@@ -713,9 +796,9 @@ SAMPLE_REVIEWS = [
 
 if __name__ == "__main__":
     # ── Initialise pipeline ───────────────────────────────────────────────────
-    print("\n" + "="*62)
+    print("\n" + "=" * 62)
     print("  INITIALISING NER PIPELINE")
-    print("="*62)
+    print("=" * 62)
     ner = ProductNERPipeline(brands=KNOWN_BRANDS)
 
     # ── Process individual reviews ────────────────────────────────────────────
@@ -730,16 +813,19 @@ if __name__ == "__main__":
     print("\nBATCH DATAFRAME PROCESSING")
     print("─" * 62)
     import numpy as np
+
     np.random.seed(42)
     n = len(SAMPLE_REVIEWS)
-    df = pd.DataFrame({
-        "review_id":      range(1, n + 1),
-        "review_text":    SAMPLE_REVIEWS,
-        "star_rating":    [5, 4, 5, 2, 5],
-        "vader_compound": [0.92, 0.75, 0.88, -0.65, 0.95],
-    })
+    df = pd.DataFrame(
+        {
+            "review_id": range(1, n + 1),
+            "review_text": SAMPLE_REVIEWS,
+            "star_rating": [5, 4, 5, 2, 5],
+            "vader_compound": [0.92, 0.75, 0.88, -0.65, 0.95],
+        }
+    )
     df_processed = ner.process_dataframe(df, text_col="review_text")
-    show_cols = ["review_id","top_brand","brands","aspects","entity_count"]
+    show_cols = ["review_id", "top_brand", "brands", "aspects", "entity_count"]
     print("\n  Extracted DataFrame columns:")
     print(df_processed[show_cols].to_string(index=False))
 

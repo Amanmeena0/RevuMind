@@ -14,15 +14,16 @@ Usage:
   python review_scraper.py
 """
 
-import time
-import random
+from dataclasses import asdict, dataclass
 import logging
-import requests
-import pandas as pd
-from bs4 import BeautifulSoup
-from dataclasses import dataclass, asdict
+import random
+import time
 from typing import Optional
 from urllib.parse import urljoin
+
+from bs4 import BeautifulSoup
+import pandas as pd
+import requests
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -37,17 +38,18 @@ log = logging.getLogger(__name__)
 @dataclass
 class Review:
     """One product review — all fields you care about."""
-    product_id:    str
-    product_name:  str
+
+    product_id: str
+    product_name: str
     reviewer_name: str
-    star_rating:   Optional[float]   # 1.0 – 5.0
-    review_title:  str
-    review_text:   str
-    review_date:   str
-    verified:      bool
+    star_rating: Optional[float]  # 1.0 – 5.0
+    review_title: str
+    review_text: str
+    review_date: str
+    verified: bool
     helpful_votes: int
-    image_urls:    str               # pipe-separated list  "url1|url2"
-    source_url:    str
+    image_urls: str  # pipe-separated list  "url1|url2"
+    source_url: str
 
 
 # ── HTTP Session ───────────────────────────────────────────────────────────────
@@ -83,7 +85,7 @@ def fetch_page(session: requests.Session, url: str, retries: int = 3) -> Optiona
             log.info(f"  ✓ fetched {url[:80]}  [{response.status_code}]")
             return response.text
         except requests.RequestException as e:
-            wait = 2 ** attempt
+            wait = 2**attempt
             log.warning(f"  Attempt {attempt}/{retries} failed: {e}. Retrying in {wait}s…")
             time.sleep(wait)
     log.error(f"  ✗ gave up on {url}")
@@ -122,9 +124,11 @@ def parse_review_images(review_div) -> list[str]:
     """Collect all image URLs attached to a review."""
     urls = []
     # Review images are usually in <img> tags inside a dedicated image section
-    img_section = review_div.select("div[data-hook='review-image-tile-section'] img, "
-                                    "div.review-image-tile img, "
-                                    "img[data-hook='review-image']")
+    img_section = review_div.select(
+        "div[data-hook='review-image-tile-section'] img, "
+        "div.review-image-tile img, "
+        "img[data-hook='review-image']"
+    )
     for img in img_section:
         src = img.get("src") or img.get("data-src") or ""
         # Amazon serves thumbnails at ._SY88. — swap for a larger size
@@ -169,15 +173,13 @@ def parse_reviews_from_html(
 
         # ── Review title ───────────────────────────────────────────────────────
         title_el = div.select_one(
-            "a[data-hook='review-title'] span, "
-            "span[data-hook='review-title']"
+            "a[data-hook='review-title'] span, " "span[data-hook='review-title']"
         )
         review_title = title_el.get_text(strip=True) if title_el else ""
 
         # ── Review body text ───────────────────────────────────────────────────
         body_el = div.select_one(
-            "span[data-hook='review-body'] span, "
-            "div[data-hook='review-collapsed'] span"
+            "span[data-hook='review-body'] span, " "div[data-hook='review-collapsed'] span"
         )
         review_text = body_el.get_text(strip=True) if body_el else ""
 
@@ -187,8 +189,7 @@ def parse_reviews_from_html(
 
         # ── Verified purchase badge ────────────────────────────────────────────
         verified_el = div.select_one(
-            "span[data-hook='avp-badge'], "
-            "span[class*='verified-purchase']"
+            "span[data-hook='avp-badge'], " "span[class*='verified-purchase']"
         )
         verified = verified_el is not None
 
@@ -199,19 +200,21 @@ def parse_reviews_from_html(
         # ── Images attached to this review ────────────────────────────────────
         image_urls = parse_review_images(div)
 
-        reviews.append(Review(
-            product_id    = product_id,
-            product_name  = product_name,
-            reviewer_name = reviewer_name,
-            star_rating   = star_rating,
-            review_title  = review_title,
-            review_text   = review_text,
-            review_date   = review_date,
-            verified      = verified,
-            helpful_votes = helpful_votes,
-            image_urls    = "|".join(image_urls),   # pipe-separated for CSV safety
-            source_url    = source_url,
-        ))
+        reviews.append(
+            Review(
+                product_id=product_id,
+                product_name=product_name,
+                reviewer_name=reviewer_name,
+                star_rating=star_rating,
+                review_title=review_title,
+                review_text=review_text,
+                review_date=review_date,
+                verified=verified,
+                helpful_votes=helpful_votes,
+                image_urls="|".join(image_urls),  # pipe-separated for CSV safety
+                source_url=source_url,
+            )
+        )
 
     return reviews
 
@@ -221,9 +224,7 @@ def get_next_page_url(html: str, base_url: str) -> Optional[str]:
     """Find the 'Next page' link in paginated review pages."""
     soup = BeautifulSoup(html, "html.parser")
     next_btn = soup.select_one(
-        "li.a-last a, "
-        "a[data-hook='pagination-bar-next-button'], "
-        "a[aria-label='Next page']"
+        "li.a-last a, " "a[data-hook='pagination-bar-next-button'], " "a[aria-label='Next page']"
     )
     if next_btn and next_btn.get("href"):
         return urljoin(base_url, next_btn["href"])
@@ -232,10 +233,10 @@ def get_next_page_url(html: str, base_url: str) -> Optional[str]:
 
 # ── Main scraper ───────────────────────────────────────────────────────────────
 def scrape_product_reviews(
-    product_id:   str,
+    product_id: str,
     product_name: str,
-    start_url:    str,
-    max_pages:    int = 5,
+    start_url: str,
+    max_pages: int = 5,
 ) -> list[Review]:
     """
     Scrape up to max_pages of reviews for one product.
@@ -274,9 +275,9 @@ def reviews_to_dataframe(reviews: list[Review]) -> pd.DataFrame:
     df = pd.DataFrame([asdict(r) for r in reviews])
 
     # ── Types ──────────────────────────────────────────────────────────────────
-    df["star_rating"]   = pd.to_numeric(df["star_rating"], errors="coerce")
+    df["star_rating"] = pd.to_numeric(df["star_rating"], errors="coerce")
     df["helpful_votes"] = pd.to_numeric(df["helpful_votes"], errors="coerce").fillna(0).astype(int)
-    df["verified"]      = df["verified"].astype(bool)
+    df["verified"] = df["verified"].astype(bool)
 
     # ── Parse date ────────────────────────────────────────────────────────────
     # Amazon date format: "Reviewed in India on 12 March 2024"
@@ -287,25 +288,23 @@ def reviews_to_dataframe(reviews: list[Review]) -> pd.DataFrame:
     )
 
     # ── Text cleaning ─────────────────────────────────────────────────────────
-    df["review_text"]  = df["review_text"].str.strip().replace(r"\s+", " ", regex=True)
+    df["review_text"] = df["review_text"].str.strip().replace(r"\s+", " ", regex=True)
     df["review_title"] = df["review_title"].str.strip()
-    df["review_text"]  = df["review_text"].fillna("")
+    df["review_text"] = df["review_text"].fillna("")
     df["review_title"] = df["review_title"].fillna("")
 
     # ── Derived features (feature engineering) ────────────────────────────────
-    df["review_length"]     = df["review_text"].str.len()
-    df["word_count"]        = df["review_text"].str.split().str.len()
-    df["has_images"]        = df["image_urls"].str.len() > 0
-    df["image_count"]       = df["image_urls"].apply(
-        lambda x: len(x.split("|")) if x else 0
-    )
-    df["sentiment_label"]   = pd.cut(
+    df["review_length"] = df["review_text"].str.len()
+    df["word_count"] = df["review_text"].str.split().str.len()
+    df["has_images"] = df["image_urls"].str.len() > 0
+    df["image_count"] = df["image_urls"].apply(lambda x: len(x.split("|")) if x else 0)
+    df["sentiment_label"] = pd.cut(
         df["star_rating"],
         bins=[0, 2, 3, 5],
         labels=["negative", "neutral", "positive"],
         right=True,
     )
-    df["is_long_review"]    = df["word_count"] > 100
+    df["is_long_review"] = df["word_count"] > 100
     df["is_highly_helpful"] = df["helpful_votes"] >= 10
 
     # ── Deduplication ─────────────────────────────────────────────────────────
@@ -315,13 +314,24 @@ def reviews_to_dataframe(reviews: list[Review]) -> pd.DataFrame:
 
     # ── Column order ──────────────────────────────────────────────────────────
     cols = [
-        "product_id", "product_name",
-        "reviewer_name", "star_rating", "sentiment_label",
-        "review_title", "review_text",
-        "review_length", "word_count", "is_long_review",
-        "review_date", "review_date_parsed",
-        "verified", "helpful_votes", "is_highly_helpful",
-        "has_images", "image_count", "image_urls",
+        "product_id",
+        "product_name",
+        "reviewer_name",
+        "star_rating",
+        "sentiment_label",
+        "review_title",
+        "review_text",
+        "review_length",
+        "word_count",
+        "is_long_review",
+        "review_date",
+        "review_date_parsed",
+        "verified",
+        "helpful_votes",
+        "is_highly_helpful",
+        "has_images",
+        "image_count",
+        "image_urls",
         "source_url",
     ]
     df = df[[c for c in cols if c in df.columns]]
@@ -341,27 +351,27 @@ def load_from_kaggle_csv(filepath: str) -> pd.DataFrame:
     log.info(f"Loaded {len(raw):,} rows from {filepath}")
 
     df = pd.DataFrame()
-    df["product_id"]    = raw["ProductId"]
-    df["product_name"]  = raw["ProductId"]          # name not in this dataset
+    df["product_id"] = raw["ProductId"]
+    df["product_name"] = raw["ProductId"]  # name not in this dataset
     df["reviewer_name"] = raw["ProfileName"].fillna("Anonymous")
-    df["star_rating"]   = pd.to_numeric(raw["Score"], errors="coerce")
-    df["review_title"]  = raw["Summary"].fillna("").str.strip()
-    df["review_text"]   = raw["Text"].fillna("").str.strip()
-    df["review_date"]   = pd.to_datetime(raw["Time"], unit="s", errors="coerce")
+    df["star_rating"] = pd.to_numeric(raw["Score"], errors="coerce")
+    df["review_title"] = raw["Summary"].fillna("").str.strip()
+    df["review_text"] = raw["Text"].fillna("").str.strip()
+    df["review_date"] = pd.to_datetime(raw["Time"], unit="s", errors="coerce")
     df["review_date_parsed"] = df["review_date"]
-    df["verified"]      = False
+    df["verified"] = False
     df["helpful_votes"] = raw["HelpfulnessNumerator"].fillna(0).astype(int)
-    df["image_urls"]    = ""
-    df["source_url"]    = "kaggle-amazon-fine-food-reviews"
+    df["image_urls"] = ""
+    df["source_url"] = "kaggle-amazon-fine-food-reviews"
 
     # ── Feature engineering ───────────────────────────────────────────────────
-    df["review_length"]     = df["review_text"].str.len()
-    df["word_count"]        = df["review_text"].str.split().str.len()
-    df["has_images"]        = False
-    df["image_count"]       = 0
-    df["is_long_review"]    = df["word_count"] > 100
+    df["review_length"] = df["review_text"].str.len()
+    df["word_count"] = df["review_text"].str.split().str.len()
+    df["has_images"] = False
+    df["image_count"] = 0
+    df["is_long_review"] = df["word_count"] > 100
     df["is_highly_helpful"] = df["helpful_votes"] >= 10
-    df["sentiment_label"]   = pd.cut(
+    df["sentiment_label"] = pd.cut(
         df["star_rating"],
         bins=[0, 2, 3, 5],
         labels=["negative", "neutral", "positive"],
@@ -375,7 +385,7 @@ def load_from_kaggle_csv(filepath: str) -> pd.DataFrame:
 # ── Save helpers ───────────────────────────────────────────────────────────────
 def save_dataframe(df: pd.DataFrame, name: str = "reviews") -> None:
     """Save to both CSV (human-readable) and Parquet (fast, typed)."""
-    csv_path     = f"{name}.csv"
+    csv_path = f"{name}.csv"
     parquet_path = f"{name}.parquet"
 
     df.to_csv(csv_path, index=False, encoding="utf-8-sig")
@@ -386,9 +396,9 @@ def save_dataframe(df: pd.DataFrame, name: str = "reviews") -> None:
 
 def print_summary(df: pd.DataFrame) -> None:
     """Quick sanity check of the loaded DataFrame."""
-    print("\n" + "="*55)
+    print("\n" + "=" * 55)
     print("  DATAFRAME SUMMARY")
-    print("="*55)
+    print("=" * 55)
     print(f"  Shape          : {df.shape}")
     print(f"  Products       : {df['product_id'].nunique()}")
     print(f"  Avg star rating: {df['star_rating'].mean():.2f}")
@@ -399,7 +409,7 @@ def print_summary(df: pd.DataFrame) -> None:
     print(df["sentiment_label"].value_counts().to_string())
     print(f"\n  Missing values:")
     print(df.isnull().sum()[df.isnull().sum() > 0].to_string())
-    print("="*55 + "\n")
+    print("=" * 55 + "\n")
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────
@@ -412,7 +422,7 @@ if __name__ == "__main__":
     #
     PRODUCTS = [
         {
-            "product_id":   "B08N5WRWNW",
+            "product_id": "B08N5WRWNW",
             "product_name": "Echo Dot 4th Gen",
             "url": (
                 "https://www.amazon.in/Echo-Dot-4th-Gen/product-reviews/"
@@ -424,10 +434,10 @@ if __name__ == "__main__":
     all_reviews = []
     for p in PRODUCTS:
         reviews = scrape_product_reviews(
-            product_id   = p["product_id"],
-            product_name = p["product_name"],
-            start_url    = p["url"],
-            max_pages    = 3,
+            product_id=p["product_id"],
+            product_name=p["product_name"],
+            start_url=p["url"],
+            max_pages=3,
         )
         all_reviews.extend(reviews)
 
@@ -443,5 +453,5 @@ if __name__ == "__main__":
     # df = load_from_kaggle_csv("Reviews.csv")
     # print_summary(df)
     # save_dataframe(df, name="kaggle_reviews")
- 
+
     print("Done. Load the CSV with: df = pd.read_csv('scraped_reviews.csv')")
