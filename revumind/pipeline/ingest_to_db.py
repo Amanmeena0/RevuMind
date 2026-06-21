@@ -183,6 +183,16 @@ def ingest_reviews_to_db(
             f"Successfully Ingested: Reviews={count_reviews}, Entities={count_entities}, Aspect Sentiments={count_aspects}"
         )
 
+        # Trigger analytical summary rebuild
+        try:
+            from revumind.analytics.builder import AnalyticsBuilder
+            logger.info("Running Analytics Builder to refresh summary tables...")
+            builder = AnalyticsBuilder()
+            builder.rebuild_all_summaries()
+        except Exception as ae:
+            logger.error(f"Failed to auto-rebuild summaries during ingestion hook: {ae}")
+
+
     except Exception as e:
         db.rollback()
         logger.error(f"Inference Ingestion failed. Transaction rolled back: {e}")

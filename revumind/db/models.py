@@ -176,3 +176,68 @@ class Summary(Base):
 
     # Relationships
     product = relationship("Product", back_populates="summaries")
+
+
+class ProductSummary(Base):
+    """
+    Materialized aggregate metrics for each product.
+    """
+    __tablename__ = "product_summary"
+
+    product_id = Column(String(50), ForeignKey("products.id", ondelete="CASCADE"), primary_key=True)
+    total_reviews = Column(Integer, nullable=False)
+    average_stars = Column(Float)
+    average_helpfulness = Column(Float)
+    positive_count = Column(Integer)
+    neutral_count = Column(Integer)
+    negative_count = Column(Integer)
+    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    product = relationship("Product")
+
+
+class MonthlySentiment(Base):
+    """
+    Materialized aggregated monthly sentiment volume per product.
+    """
+    __tablename__ = "monthly_sentiment"
+
+    month = Column(String(7), primary_key=True)  # YYYY-MM
+    product_id = Column(String(50), ForeignKey("products.id", ondelete="CASCADE"), primary_key=True)
+    total_reviews = Column(Integer)
+    positive_count = Column(Integer)
+    neutral_count = Column(Integer)
+    negative_count = Column(Integer)
+
+    product = relationship("Product")
+
+
+class AspectSummary(Base):
+    """
+    Materialized aggregated aspect term sentiment per product.
+    """
+    __tablename__ = "aspect_summary"
+
+    product_id = Column(String(50), ForeignKey("products.id", ondelete="CASCADE"), primary_key=True)
+    aspect_term = Column(String(255), primary_key=True)
+    positive_count = Column(Integer)
+    neutral_count = Column(Integer)
+    negative_count = Column(Integer)
+    avg_confidence = Column(Float)
+
+    product = relationship("Product")
+
+
+class ComplaintSummary(Base):
+    """
+    Materialized aggregated complaints (low ratings) by topic per product.
+    """
+    __tablename__ = "complaint_summary"
+
+    product_id = Column(String(50), ForeignKey("products.id", ondelete="CASCADE"), primary_key=True)
+    topic_name = Column(String(255), primary_key=True)
+    complaint_count = Column(Integer)
+    severity_score = Column(Float)
+
+    product = relationship("Product")
+

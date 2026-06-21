@@ -1,6 +1,19 @@
 # Data
 /data/
 archive/
+/revumind.db
+*.csv
+*.parquet
+*.zip
+*.gz
+*.tar
+
+# Serialized ML Models & Binary files
+*.pkl
+*.joblib
+*.pt
+*.bin
+*.onnx
 
 # Mac OS-specific storage files
 .DS_Store
@@ -194,3 +207,4 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+revumind.db

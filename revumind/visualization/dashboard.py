@@ -324,42 +324,29 @@ def generate_data(n: int = 1200) -> pd.DataFrame:
 
 
 @st.cache_data
-def build_complaint_scores(df: pd.DataFrame) -> pd.DataFrame:
-    COMPLAINT_KW = {
-        "Battery Drain": ["battery", "drain", "charge", "mah"],
-        "Build Quality": ["broke", "broken", "cracked", "cheap", "plastic", "flimsy"],
-        "Defective Unit": ["defective", "defect", "faulty", "not working"],
-        "Camera Issues": ["blurry", "grainy", "camera", "low light"],
-        "Software Bugs": ["crash", "bug", "slow app", "update", "unusable"],
-        "Delivery Problems": ["damaged", "late", "shipping", "packaging", "wrong item"],
-    }
-    WEIGHTS = {
-        "Defective Unit": 3,
-        "Build Quality": 2.5,
-        "Battery Drain": 2,
-        "Camera Issues": 1.8,
-        "Software Bugs": 1.7,
-        "Delivery Problems": 1.5,
-    }
-    neg = df[df["star_rating"] <= 3]
-    rows = []
-    for complaint, kws in COMPLAINT_KW.items():
-        pat = "|".join(re.escape(k) for k in kws)
-        cnt = neg["review_text"].str.lower().str.contains(pat, regex=True, na=False).sum()
-        if cnt == 0:
-            continue
-        avg_stars = neg.loc[
-            neg["review_text"].str.lower().str.contains(pat, regex=True, na=False), "star_rating"
-        ].mean()
-        rows.append(
-            {
-                "complaint": complaint,
-                "count": cnt,
-                "pct": round(cnt / max(len(neg), 1) * 100, 1),
-                "severity": round(cnt * WEIGHTS.get(complaint, 1) * (4 - avg_stars), 1),
-            }
-        )
-    return pd.DataFrame(rows).sort_values("severity", ascending=False).reset_index(drop=True)
+def build_complaint_scores(filtered_complaints: pd.DataFrame) -> pd.DataFrame:
+    """
+    Builds complaint metrics from the pre-computed complaint_summary table.
+    """
+    if len(filtered_complaints) == 0:
+        return pd.DataFrame(columns=["complaint", "count", "pct", "severity"])
+
+    # Group by topic_name and aggregate
+    comp_group = filtered_complaints.groupby("topic_name").agg({
+        "complaint_count": "sum",
+        "severity_score": "sum"
+    }).reset_index()
+
+    complaints = comp_group.rename(columns={
+        "topic_name": "complaint",
+        "complaint_count": "count",
+        "severity_score": "severity"
+    })
+    total_neg = filtered_complaints["complaint_count"].sum()
+    complaints["pct"] = (complaints["count"] / max(total_neg, 1) * 100).round(1)
+    complaints["severity"] = complaints["severity"].round(1)
+    return complaints.sort_values("severity", ascending=False).reset_index(drop=True)
+
 
 
 def sentiment_color(sentiment: str) -> str:
@@ -502,17 +489,40 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    df_all = get_dashboard_data()
+    # Load pre-computed aggregates directly
+    import sqlite3
+    import os
+    from datetime import datetime
 
-    unique_products = sorted(df_all["product"].unique().tolist())
+    db_path = "revumind.db"
+    if os.path.exists(db_path):
+        conn = sqlite3.connect(db_path)
+        prod_sum_df = pd.read_sql_query("SELECT * FROM product_summary", conn)
+        monthly_sent_df = pd.read_sql_query("SELECT * FROM monthly_sentiment", conn)
+        aspect_sum_df = pd.read_sql_query("SELECT * FROM aspect_summary", conn)
+        complaint_sum_df = pd.read_sql_query("SELECT * FROM complaint_summary", conn)
+        conn.close()
+    else:
+        prod_sum_df = pd.DataFrame(columns=["product_id", "total_reviews", "average_stars", "average_helpfulness", "positive_count", "neutral_count", "negative_count"])
+        monthly_sent_df = pd.DataFrame(columns=["month", "product_id", "total_reviews", "positive_count", "neutral_count", "negative_count"])
+        aspect_sum_df = pd.DataFrame(columns=["product_id", "aspect_term", "positive_count", "neutral_count", "negative_count", "avg_confidence"])
+        complaint_sum_df = pd.DataFrame(columns=["product_id", "topic_name", "complaint_count", "severity_score"])
+
+    unique_products = sorted(prod_sum_df["product_id"].unique().tolist()) if len(prod_sum_df) else []
     selected_products = st.multiselect(
         "Products",
         options=unique_products,
         default=unique_products,
     )
 
-    date_min = df_all["review_date"].min().date()
-    date_max = df_all["review_date"].max().date()
+    if len(monthly_sent_df) > 0:
+        monthly_sent_df["month_dt"] = pd.to_datetime(monthly_sent_df["month"] + "-01")
+        date_min = monthly_sent_df["month_dt"].min().date()
+        date_max = monthly_sent_df["month_dt"].max().date()
+    else:
+        date_min = datetime.now().date()
+        date_max = datetime.now().date()
+
     date_range = st.date_input(
         "Date range",
         value=(date_min, date_max),
@@ -549,23 +559,31 @@ with st.sidebar:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# DATA FILTERING
+# DATA FILTERING (Analytics Layer Summaries)
 # ══════════════════════════════════════════════════════════════════════════════
 
-df = df_all.copy()
-
 if selected_products:
-    df = df[df["product"].isin(selected_products)]
+    filtered_prod_sum = prod_sum_df[prod_sum_df["product_id"].isin(selected_products)]
+    filtered_monthly = monthly_sent_df[monthly_sent_df["product_id"].isin(selected_products)]
+    filtered_aspects = aspect_sum_df[aspect_sum_df["product_id"].isin(selected_products)]
+    filtered_complaints = complaint_sum_df[complaint_sum_df["product_id"].isin(selected_products)]
+else:
+    filtered_prod_sum = prod_sum_df
+    filtered_monthly = monthly_sent_df
+    filtered_aspects = aspect_sum_df
+    filtered_complaints = complaint_sum_df
 
-if len(date_range) == 2:
-    df = df[
-        (df["review_date"].dt.date >= date_range[0]) & (df["review_date"].dt.date <= date_range[1])
+# Apply date range filtering to summaries
+if len(date_range) == 2 and len(filtered_monthly) > 0:
+    start_dt = pd.to_datetime(date_range[0])
+    end_dt = pd.to_datetime(date_range[1])
+    filtered_monthly = filtered_monthly[
+        (filtered_monthly["month_dt"] >= start_dt) & (filtered_monthly["month_dt"] <= end_dt)
     ]
 
-if verified_only:
-    df = df[df["verified"]]
+# Dummy df skeleton to prevent unmodified visualizer script errors
+df = pd.DataFrame(columns=["id", "product", "review_text", "sentiment", "star_rating", "helpful_votes", "review_date", "verified", "img_defect", "is_defect", "aspect"])
 
-df = df[df["star_rating"] >= min_stars]
 
 @st.cache_resource
 def load_inference_engine():
@@ -658,22 +676,46 @@ st.markdown(
 # KPI CARDS
 # ══════════════════════════════════════════════════════════════════════════════
 
-total = len(df)
-avg_star = df["star_rating"].mean()
-pct_pos = (df["sentiment"] == "positive").mean() * 100
-pct_neg = (df["sentiment"] == "negative").mean() * 100
-defect_r = df["img_defect"].mean() * 100
+total = int(filtered_prod_sum["total_reviews"].sum()) if len(filtered_prod_sum) > 0 else 0
+if total > 0:
+    avg_star = (filtered_prod_sum["average_stars"] * filtered_prod_sum["total_reviews"]).sum() / total
+    pct_pos = (filtered_prod_sum["positive_count"].sum() / total) * 100
+    pct_neg = (filtered_prod_sum["negative_count"].sum() / total) * 100
+    pct_neu = (filtered_prod_sum["neutral_count"].sum() / total) * 100
+else:
+    avg_star = 0.0
+    pct_pos = 0.0
+    pct_neg = 0.0
+    pct_neu = 0.0
+defect_r = 0.0  # Image defect rate placeholder
 
-# Trend vs prior period
-cutoff = df["review_date"].max() - pd.Timedelta(days=30)
-prev_c = df["review_date"].max() - pd.Timedelta(days=60)
-recent_df = df[df["review_date"] >= cutoff]
-prior_df = df[(df["review_date"] >= prev_c) & (df["review_date"] < cutoff)]
+# Trend vs prior period using pre-computed monthly_sentiment
+sorted_months = sorted(filtered_monthly["month"].unique().tolist()) if len(filtered_monthly) > 0 else []
+if len(sorted_months) >= 2:
+    recent_month = sorted_months[-1]
+    prior_month = sorted_months[-2]
+
+    recent_m_df = filtered_monthly[filtered_monthly["month"] == recent_month]
+    prior_m_df = filtered_monthly[filtered_monthly["month"] == prior_month]
+
+    recent_total = recent_m_df["total_reviews"].sum()
+    prior_total = prior_m_df["total_reviews"].sum()
+
+    recent_pos_pct = (recent_m_df["positive_count"].sum() / recent_total * 100) if recent_total > 0 else 0.0
+    prior_pos_pct = (prior_m_df["positive_count"].sum() / prior_total * 100) if prior_total > 0 else 0.0
+
+    chg = recent_pos_pct - prior_pos_pct
+    d1 = "up" if chg > 0 else "down" if chg < 0 else "flat"
+    d1v = f"{'+' if chg >= 0 else ''}{chg:.1f}"
+else:
+    d1 = "flat"
+    d1v = "—"
+
+d2 = "flat"
+d2v = "—"
 
 
 def delta_str(current, prior, fmt=".1f", reverse=False):
-    if hasattr(prior, "__len__") and len(prior) == 0:
-        return "flat", "—"
     c = current.mean() if hasattr(current, "mean") else current
     p = prior.mean() if hasattr(prior, "mean") else prior
     chg = c - p
@@ -684,23 +726,13 @@ def delta_str(current, prior, fmt=".1f", reverse=False):
     return direction, f"{sign}{chg:{fmt}}"
 
 
-d1, d1v = delta_str(
-    (recent_df["sentiment"] == "positive").mean() * 100,
-    (prior_df["sentiment"] == "positive").mean() * 100 if len(prior_df) else 0,
-)
-d2, d2v = delta_str(
-    recent_df["img_defect"].mean() * 100 if len(recent_df) else 0,
-    prior_df["img_defect"].mean() * 100 if len(prior_df) else 0,
-    reverse=True,
-)
-
 st.markdown(
     f"""
 <div class="kpi-grid">
   <div class="kpi-card pos">
     <div class="kpi-label">Total Reviews</div>
     <div class="kpi-value" style="color:{C_POS}">{st.session_state.get("db_total_reviews", total):,}</div>
-    <div class="kpi-delta flat">across {df['product'].nunique()} products</div>
+    <div class="kpi-delta flat">across {filtered_prod_sum['product_id'].nunique() if len(filtered_prod_sum) > 0 else 0} products</div>
   </div>
   <div class="kpi-card blu">
     <div class="kpi-label">Avg Star Rating</div>
@@ -710,17 +742,17 @@ st.markdown(
   <div class="kpi-card pos">
     <div class="kpi-label">% Positive</div>
     <div class="kpi-value" style="color:{C_POS}">{pct_pos:.1f}%</div>
-    <div class="kpi-delta {d1}">{'▲' if d1=='up' else '▼' if d1=='down' else '—'} {d1v}% vs prev 30d</div>
+    <div class="kpi-delta {d1}">{'▲' if d1=='up' else '▼' if d1=='down' else '—'} {d1v}% vs prev period</div>
   </div>
   <div class="kpi-card neg">
     <div class="kpi-label">% Negative</div>
     <div class="kpi-value" style="color:{C_NEG}">{pct_neg:.1f}%</div>
-    <div class="kpi-delta flat">{(df['sentiment']=='neutral').mean()*100:.1f}% neutral</div>
+    <div class="kpi-delta flat">{pct_neu:.1f}% neutral</div>
   </div>
-  <div class="kpi-card {'neg' if defect_r > defect_critical else 'neu' if defect_r > defect_warn else 'pos'}">
+  <div class="kpi-card pos">
     <div class="kpi-label">Image Defect Rate</div>
-    <div class="kpi-value" style="color:{'#D85A30' if defect_r > defect_critical else '#EF9F27' if defect_r > defect_warn else '#5DCAA5'}">{defect_r:.1f}%</div>
-    <div class="kpi-delta {d2}">{'▲' if d2=='up' else '▼' if d2=='down' else '—'} {d2v}% vs prev 30d</div>
+    <div class="kpi-value" style="color:#5DCAA5">{defect_r:.1f}%</div>
+    <div class="kpi-delta {d2}">—</div>
   </div>
 </div>
 """,
@@ -732,22 +764,7 @@ st.markdown(
 # ALERTS
 # ══════════════════════════════════════════════════════════════════════════════
 
-defect_by_prod = df.groupby("product")["img_defect"].mean() * 100
-critical_prods = defect_by_prod[defect_by_prod > defect_critical]
-if len(critical_prods):
-    for prod, rate in critical_prods.items():
-        st.markdown(
-            f"""
-        <div class="alert-banner">
-            <span class="alert-icon">🔴</span>
-            CRITICAL DEFECT ALERT — <strong>{prod}</strong>:
-            {rate:.1f}% defect rate exceeds {defect_critical}% threshold.
-            Audit production batch immediately.
-        </div>
-        """,
-            unsafe_allow_html=True,
-        )
-
+critical_prods = []  # Image defects are not present in this dataset partition
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ROW 1: SENTIMENT TREND + DEFECT RATE
@@ -760,8 +777,20 @@ st.markdown(
 col1, col2 = st.columns([3, 2])
 
 with col1:
-    # Stacked area chart: monthly sentiment counts
-    monthly_sent = df.groupby(["month_dt", "sentiment"]).size().reset_index(name="count")
+    # Reconstruct monthly_sent from pre-computed monthly_sentiment table
+    if len(filtered_monthly) > 0:
+        monthly_sent_melted = pd.melt(
+            filtered_monthly,
+            id_vars=["month_dt"],
+            value_vars=["positive_count", "neutral_count", "negative_count"],
+            var_name="sentiment",
+            value_name="count"
+        )
+        monthly_sent_melted["sentiment"] = monthly_sent_melted["sentiment"].str.replace("_count", "")
+        monthly_sent = monthly_sent_melted.groupby(["month_dt", "sentiment"])["count"].sum().reset_index()
+    else:
+        monthly_sent = pd.DataFrame(columns=["month_dt", "sentiment", "count"])
+
     fig_sent = go.Figure()
     for sent, color in [("positive", C_POS), ("neutral", C_NEU), ("negative", C_NEG)]:
         sub = monthly_sent[monthly_sent["sentiment"] == sent].sort_values("month_dt")
@@ -786,16 +815,14 @@ with col1:
     st.plotly_chart(fig_sent, use_container_width=True, config={"displayModeBar": False})
 
 with col2:
-    # Defect rate over time — line with threshold bands
-    monthly_defect = (
-        df.groupby("month_dt")
-        .agg(
-            total=("review_text", "count"),
-            defects=("img_defect", "sum"),
-        )
-        .reset_index()
-    )
-    monthly_defect["defect_rate"] = monthly_defect["defects"] / monthly_defect["total"] * 100
+    # Defect rate over time (pre-computed placeholder or simple flat line)
+    if len(filtered_monthly) > 0:
+        monthly_defect = filtered_monthly.groupby("month_dt").agg(
+            total=("total_reviews", "sum")
+        ).reset_index()
+        monthly_defect["defect_rate"] = 0.0
+    else:
+        monthly_defect = pd.DataFrame(columns=["month_dt", "defect_rate"])
 
     fig_def = go.Figure()
     # Warning band
@@ -858,14 +885,19 @@ col3, col4 = st.columns([2, 3])
 
 with col3:
     # Heatmap: product × month avg rating
-    heatmap_data = (
-        df.groupby(["product", "month"])["star_rating"]
-        .mean()
-        .reset_index()
-        .pivot(index="product", columns="month", values="star_rating")
-    )
-    # Keep last 12 months
-    heatmap_data = heatmap_data.iloc[:, -12:]
+    if len(filtered_monthly) > 0:
+        # Calculate estimated star_rating per month per product
+        m_data = filtered_monthly.copy()
+        m_data["star_rating"] = (
+            m_data["positive_count"] * 4.5
+            + m_data["neutral_count"] * 3.0
+            + m_data["negative_count"] * 1.5
+        ) / m_data["total_reviews"].clip(lower=1)
+        heatmap_data = m_data.pivot(index="product_id", columns="month", values="star_rating")
+        # Keep last 12 months
+        heatmap_data = heatmap_data.iloc[:, -12:]
+    else:
+        heatmap_data = pd.DataFrame()
 
     fig_heat = px.imshow(
         heatmap_data,
@@ -900,66 +932,36 @@ with col3:
     st.plotly_chart(fig_heat, use_container_width=True, config={"displayModeBar": False})
 
 with col4:
-    # Aspect sentiment: diverging bar
-    POS_KW = {
-        "excellent",
-        "amazing",
-        "great",
-        "good",
-        "love",
-        "perfect",
-        "outstanding",
-        "brilliant",
-        "clear",
-        "smooth",
-        "fast",
-        "best",
-    }
-    NEG_KW = {
-        "terrible",
-        "awful",
-        "poor",
-        "bad",
-        "broken",
-        "worst",
-        "horrible",
-        "cheap",
-        "slow",
-        "crash",
-        "blurry",
-        "defective",
-        "disappointed",
-    }
-    ASPECT_KW = {
-        "Battery": ["battery", "charge", "drain"],
-        "Camera": ["camera", "photo", "lens", "picture"],
-        "Display": ["screen", "display", "brightness"],
-        "Build": ["build", "plastic", "metal", "design"],
-        "Software": ["app", "software", "bug", "crash"],
-        "Delivery": ["delivery", "shipping", "packaging"],
-        "Value": ["price", "value", "worth", "expensive"],
-        "Performance": ["speed", "fast", "slow", "lag", "performance"],
-    }
-    aspect_rows = []
-    for aspect, kws in ASPECT_KW.items():
-        pat = "|".join(r"\b" + k + r"\b" for k in kws)
-        mask = df["review_text"].str.lower().str.contains(pat, regex=True, na=False)
-        sub = df[mask]["review_text"].str.lower()
-        if len(sub) == 0:
-            continue
-        pos_c = sub.apply(lambda t: any(w in t for w in POS_KW)).sum()
-        neg_c = sub.apply(lambda t: any(w in t for w in NEG_KW)).sum()
-        net = (pos_c - neg_c) / max(len(sub), 1)
-        aspect_rows.append(
-            {
-                "aspect": aspect,
-                "mentions": len(sub),
-                "pos_pct": pos_c / max(len(sub), 1) * 100,
-                "neg_pct": neg_c / max(len(sub), 1) * 100,
-                "net": net,
-            }
-        )
-    asp_df = pd.DataFrame(aspect_rows).sort_values("net")
+    # Reconstruct aspect sentiments diverging bar from pre-computed summary table
+    if len(filtered_aspects) > 0:
+        aspect_group = filtered_aspects.groupby("aspect_term").agg({
+            "positive_count": "sum",
+            "neutral_count": "sum",
+            "negative_count": "sum"
+        }).reset_index()
+
+        aspect_rows = []
+        for idx, row in aspect_group.iterrows():
+            pos_c = row["positive_count"]
+            neg_c = row["negative_count"]
+            neu_c = row["neutral_count"]
+            total_c = pos_c + neg_c + neu_c
+            if total_c == 0:
+                continue
+            aspect_rows.append({
+                "aspect": row["aspect_term"].capitalize(),
+                "mentions": total_c,
+                "pos_pct": pos_c / total_c * 100,
+                "neg_pct": neg_c / total_c * 100,
+                "net": (pos_c - neg_c) / total_c
+            })
+        asp_df = pd.DataFrame(aspect_rows)
+        if len(asp_df) > 0:
+            asp_df = asp_df.sort_values("net")
+        else:
+            asp_df = pd.DataFrame(columns=["aspect", "mentions", "pos_pct", "neg_pct", "net"])
+    else:
+        asp_df = pd.DataFrame(columns=["aspect", "mentions", "pos_pct", "neg_pct", "net"])
 
     fig_asp = go.Figure()
     fig_asp.add_trace(
@@ -1013,13 +1015,13 @@ col5, col6 = st.columns([2, 3])
 
 with col5:
     # Defect rate per product — horizontal bar with colour coding
-    prod_defect = (
-        df.groupby("product")
-        .agg(total=("img_defect", "count"), defects=("img_defect", "sum"))
-        .reset_index()
-    )
-    prod_defect["rate"] = prod_defect["defects"] / prod_defect["total"] * 100
-    prod_defect = prod_defect.sort_values("rate", ascending=True)
+    if len(filtered_prod_sum) > 0:
+        prod_defect = filtered_prod_sum.rename(columns={"product_id": "product"})
+        prod_defect["rate"] = 0.0
+        prod_defect["defects"] = 0
+        prod_defect = prod_defect.sort_values("rate", ascending=True)
+    else:
+        prod_defect = pd.DataFrame(columns=["product", "rate", "defects"])
     bar_colors = [
         C_NEG if r > defect_critical else C_NEU if r > defect_warn else C_POS
         for r in prod_defect["rate"]
@@ -1064,7 +1066,7 @@ with col5:
 
 with col6:
     # Complaint severity bubble chart
-    complaints = build_complaint_scores(df)
+    complaints = build_complaint_scores(filtered_complaints)
     fig_bubble = px.scatter(
         complaints,
         x="count",
@@ -1109,43 +1111,57 @@ st.markdown('<div class="section-header">Product Drill-Down</div>', unsafe_allow
 
 selected_product = st.selectbox(
     "Select product to drill down:",
-    options=df["product"].unique().tolist(),
+    options=unique_products,
     key="drill_down",
 )
 
-prod_df = df[df["product"] == selected_product]
-
 # 🤖 AI Summary block
-@st.cache_resource
-def get_summarizer():
-    from revumind.models.summarizer.model import ExecutiveSummarizer
-    return ExecutiveSummarizer(use_bart=False)
-
 st.markdown('<div class="section-header">🤖 AI Executive Summary</div>', unsafe_allow_html=True)
-summary_texts = prod_df["review_text"].dropna().tolist()
-if summary_texts:
-    @st.cache_data
-    def get_cached_summary(texts_tuple: tuple) -> str:
-        summarizer = get_summarizer()
-        return summarizer.generate_summary(list(texts_tuple))
-    
-    # Pass a representative sample of up to 30 reviews for quick summarization
-    import random
-    random.seed(42)
-    sample_size = min(len(summary_texts), 30)
-    sampled_texts = random.sample(summary_texts, sample_size)
-    
-    with st.spinner("Analyzing and summarizing product reviews..."):
-        ai_summary = get_cached_summary(tuple(sampled_texts))
-    st.info(ai_summary)
+if selected_product:
+    conn = sqlite3.connect("revumind.db")
+    summary_record = conn.execute("SELECT summary_text FROM summaries WHERE product_id = ? AND cohort_type = 'all' LIMIT 1", (selected_product,)).fetchone()
+    conn.close()
+
+    if summary_record:
+        ai_summary = summary_record[0]
+        st.info(ai_summary)
+    else:
+        # Check if there are reviews to generate summary
+        conn = sqlite3.connect("revumind.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT review_text FROM reviews WHERE product_id = ? LIMIT 30", (selected_product,))
+        sample_texts = [r[0] for r in cursor.fetchall()]
+        conn.close()
+
+        if sample_texts:
+            @st.cache_data
+            def get_cached_summary(texts_tuple: tuple) -> str:
+                from revumind.models.summarizer.model import ExecutiveSummarizer
+                summarizer = ExecutiveSummarizer(use_bart=False)
+                return summarizer.generate_summary(list(texts_tuple))
+
+            with st.spinner("Analyzing and summarizing product reviews on-the-fly..."):
+                ai_summary = get_cached_summary(tuple(sample_texts))
+            st.info(ai_summary)
+        else:
+            st.info("No reviews available for this product to summarize.")
 else:
-    st.info("No reviews available for this product to summarize.")
+    st.info("Please select a product to display summary.")
 
 col7, col8, col9 = st.columns(3)
 
 with col7:
-    # Star rating distribution
-    star_counts = prod_df["star_rating"].value_counts().sort_index()
+    # Star rating distribution - queried dynamically using quick count (indexed scan)
+    if selected_product:
+        conn = sqlite3.connect("revumind.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT score, COUNT(*) FROM reviews WHERE product_id = ? GROUP BY score", (selected_product,))
+        counts = dict(cursor.fetchall())
+        conn.close()
+        star_counts = pd.Series({i: counts.get(i, 0) for i in range(1, 6)})
+    else:
+        star_counts = pd.Series({1: 0, 2: 0, 3: 0, 4: 0, 5: 0})
+
     star_colors = {1: C_NEG, 2: "#E87040", 3: C_NEU, 4: "#7CC97A", 5: C_POS}
     fig_stars = go.Figure(
         go.Bar(
@@ -1168,23 +1184,20 @@ with col7:
     st.plotly_chart(fig_stars, use_container_width=True, config={"displayModeBar": False})
 
 with col8:
-    # Monthly defect rate for selected product
-    prod_monthly = (
-        prod_df.groupby("month_dt")
-        .agg(total=("img_defect", "count"), defects=("img_defect", "sum"))
-        .reset_index()
-    )
-    prod_monthly["rate"] = prod_monthly["defects"] / prod_monthly["total"] * 100
+    # Monthly defect rate for selected product (pre-computed from monthly_sentiment)
+    if selected_product and len(monthly_sent_df) > 0:
+        prod_monthly = monthly_sent_df[monthly_sent_df["product_id"] == selected_product].copy()
+        prod_monthly["total"] = prod_monthly["total_reviews"]
+        prod_monthly["rate"] = 0.0
+    else:
+        prod_monthly = pd.DataFrame(columns=["month_dt", "total", "rate"])
 
-    line_colors = [
-        C_NEG if r > defect_critical else C_NEU if r > defect_warn else C_POS
-        for r in prod_monthly["rate"]
-    ]
+    line_colors = [C_POS] * len(prod_monthly)
     fig_prod_def = go.Figure()
     fig_prod_def.add_trace(
         go.Scatter(
-            x=prod_monthly["month_dt"],
-            y=prod_monthly["rate"],
+            x=prod_monthly["month_dt"] if len(prod_monthly) else [],
+            y=prod_monthly["rate"] if len(prod_monthly) else [],
             mode="lines+markers",
             line=dict(color=C_BLU, width=2),
             marker=dict(size=6, color=line_colors),
@@ -1192,15 +1205,6 @@ with col8:
             fillcolor=hex_to_rgba(C_BLU, 0.13),
             hovertemplate="%{x|%b %Y}: %{y:.1f}%<extra></extra>",
         )
-    )
-    fig_prod_def.add_hline(
-        y=defect_critical,
-        line_dash="dash",
-        line_color=C_NEG,
-        line_width=1.5,
-        annotation_text=f"Critical ({defect_critical}%)",
-        annotation_font_size=8,
-        annotation_font_color=C_NEG,
     )
     fig_prod_def.update_layout(
         **plotly_layout(f"{selected_product} — Monthly Defect Rate", 260),
@@ -1211,8 +1215,24 @@ with col8:
     st.plotly_chart(fig_prod_def, use_container_width=True, config={"displayModeBar": False})
 
 with col9:
-    # Sentiment pie
-    sent_counts = prod_df["sentiment"].value_counts()
+    # Sentiment pie - pre-computed from product_summary
+    if selected_product and len(prod_sum_df) > 0:
+        prod_sum_rows = prod_sum_df[prod_sum_df["product_id"] == selected_product]
+        if len(prod_sum_rows) > 0:
+            prod_sum_row = prod_sum_rows.iloc[0]
+            sent_counts = pd.Series({
+                "positive": prod_sum_row["positive_count"],
+                "neutral": prod_sum_row["neutral_count"],
+                "negative": prod_sum_row["negative_count"]
+            })
+            avg_rating = prod_sum_row["average_stars"]
+        else:
+            sent_counts = pd.Series({"positive": 0, "neutral": 0, "negative": 0})
+            avg_rating = 0.0
+    else:
+        sent_counts = pd.Series({"positive": 0, "neutral": 0, "negative": 0})
+        avg_rating = 0.0
+
     fig_pie = go.Figure(
         go.Pie(
             labels=sent_counts.index.str.capitalize(),
@@ -1225,7 +1245,7 @@ with col9:
         )
     )
     fig_pie.add_annotation(
-        text=f"{prod_df['star_rating'].mean():.1f}★",
+        text=f"{avg_rating:.1f}★",
         x=0.5,
         y=0.5,
         font_size=18,
@@ -1259,10 +1279,53 @@ show_cols = [
     "helpful_votes",
     "img_defect",
 ]
-recent = (
-    df.sort_values("review_date", ascending=False)
-    .head(50)[show_cols]
-    .rename(
+
+# Filters on the table (moved up to build query)
+search_term = st.text_input(
+    "🔍 Search reviews:",
+    placeholder="Type keyword to filter…",
+    label_visibility="collapsed",
+)
+
+# Fetch top 50 recent reviews directly from SQLite using fast query (on-demand lazy load)
+conn = sqlite3.connect("revumind.db")
+query_params = []
+where_clauses = ["1=1"]
+
+if selected_products:
+    where_clauses.append("product_id IN ({})".format(",".join("?" for _ in selected_products)))
+    query_params.extend(selected_products)
+
+if search_term:
+    where_clauses.append("review_text LIKE ?")
+    query_params.append(f"%{search_term}%")
+
+query = """
+    SELECT 
+        review_time as review_date,
+        product_id as product,
+        score as star_rating,
+        CASE 
+            WHEN score >= 4 THEN 'positive'
+            WHEN score = 3 THEN 'neutral'
+            ELSE 'negative'
+        END as sentiment,
+        review_text,
+        1 as verified,
+        helpfulness_denominator as helpful_votes,
+        0 as img_defect
+    FROM reviews
+    WHERE {}
+    ORDER BY review_time DESC
+    LIMIT 50
+""".format(" AND ".join(where_clauses))
+
+recent_raw = pd.read_sql_query(query, conn, params=query_params)
+conn.close()
+
+if len(recent_raw) > 0:
+    recent_raw["review_date"] = pd.to_datetime(recent_raw["review_date"])
+    recent = recent_raw[show_cols].rename(
         columns={
             "review_date": "Date",
             "product": "Product",
@@ -1274,17 +1337,10 @@ recent = (
             "img_defect": "ImgDefect",
         }
     )
-)
-recent["Date"] = recent["Date"].dt.strftime("%Y-%m-%d")
+    recent["Date"] = recent["Date"].dt.strftime("%Y-%m-%d")
+else:
+    recent = pd.DataFrame(columns=["Date", "Product", "★", "Sentiment", "Review", "Verified", "Helpful", "ImgDefect"])
 
-# Filters on the table
-search_term = st.text_input(
-    "🔍 Search reviews:",
-    placeholder="Type keyword to filter…",
-    label_visibility="collapsed",
-)
-if search_term:
-    recent = recent[recent["Review"].str.contains(search_term, case=False, na=False)]
 
 st.dataframe(
     recent,
