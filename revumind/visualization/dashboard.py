@@ -393,7 +393,8 @@ def plotly_layout(title: str = "", height: int = 340) -> dict:
 
 
 # Load database configurations dynamically
-def load_real_data_from_db() -> pd.DataFrame:
+@st.cache_data
+def load_real_data_from_db() -> tuple:
     """
     Attempts to load real analyzed review records from the SQLite database.
     Maps database schema to the columns expected by the Streamlit dashboard.
@@ -403,52 +404,53 @@ def load_real_data_from_db() -> pd.DataFrame:
 
     db_path = "revumind.db"
     if not os.path.exists(db_path):
-        return None
+        return None, 0
 
     try:
         conn = sqlite3.connect(db_path)
-        # Query reviews table
+        # Get total reviews count (extremely fast query)
+        total_count = int(pd.read_sql_query("SELECT count(*) FROM reviews", conn).iloc[0, 0])
+
+        # Query reviews table with calculated sentiment and joined aspect mapping (limited to 20,000 for high performance)
         query = """
             SELECT 
                 r.id as id,
                 r.product_id as product,
                 r.review_text as review_text,
-                r.overall_sentiment as sentiment,
+                CASE 
+                    WHEN r.score >= 4 THEN 'positive'
+                    WHEN r.score = 3 THEN 'neutral'
+                    ELSE 'negative'
+                END as sentiment,
                 r.score as star_rating,
                 r.helpfulness_denominator as helpful_votes,
-                r.review_time as review_date
+                r.review_time as review_date,
+                a.aspect_term as aspect
             FROM reviews r
+            LEFT JOIN (
+                SELECT review_id, MIN(aspect_term) as aspect_term 
+                FROM aspect_sentiments 
+                GROUP BY review_id
+            ) a ON r.id = a.review_id
+            ORDER BY r.review_time DESC
+            LIMIT 20000
         """
         df = pd.read_sql_query(query, conn)
+        conn.close()
 
         if len(df) == 0:
-            conn.close()
-            return None
-
-        # Load aspect mapping dynamically from aspect_sentiments table if available
-        try:
-            df_aspects = pd.read_sql_query(
-                "SELECT review_id, aspect_term FROM aspect_sentiments", conn
-            )
-            aspect_map = df_aspects.groupby("review_id")["aspect_term"].first().to_dict()
-        except Exception:
-            aspect_map = {}
-
-        conn.close()
+            return None, 0
 
         # Format columns
         df["review_date"] = pd.to_datetime(df["review_date"])
         df["verified"] = True
         df["img_defect"] = 0
         df["is_defect"] = (df["sentiment"] == "negative").astype(int)
-        df["aspect"] = df["id"].map(aspect_map).fillna("Value")
+        df["aspect"] = df["aspect"].fillna("Value").str.capitalize()
 
-        # Map aspect to capitalized value
-        df["aspect"] = df["aspect"].str.capitalize()
-
-        return df
+        return df, total_count
     except Exception as e:
-        return None
+        return None, 0
 
 
 def get_dashboard_data() -> pd.DataFrame:
@@ -456,8 +458,11 @@ def get_dashboard_data() -> pd.DataFrame:
     Tries to retrieve real database records first;
     falls back to synthetic data generation if database is empty.
     """
-    db_df = load_real_data_from_db()
+    db_df, total_count = load_real_data_from_db()
     if db_df is not None and len(db_df) >= 5:
+        # Store total reviews count in session state for displaying in KPI cards
+        st.session_state["db_total_reviews"] = total_count
+
         # Calculate monthly period keys required by dashboard
         db_df["month"] = db_df["review_date"].dt.to_period("M").astype(str)
         db_df["month_dt"] = pd.to_datetime(db_df["month"])
@@ -471,6 +476,22 @@ def get_dashboard_data() -> pd.DataFrame:
 # ══════════════════════════════════════════════════════════════════════════════
 
 with st.sidebar:
+    st.markdown(
+        """
+    <div style="font-family:'IBM Plex Mono';font-size:1rem;
+                font-weight:700;color:#5DCAA5;margin-bottom:1rem;">
+        ⬡ VIEW MODE
+    </div>
+    """,
+        unsafe_allow_html=True,
+    )
+    view_mode = st.radio(
+        "Select Mode",
+        options=["Dashboard Analytics", "Model Playground (Test Reviews)"],
+        label_visibility="collapsed"
+    )
+
+    st.markdown("---")
     st.markdown(
         """
     <div style="font-family:'IBM Plex Mono';font-size:1rem;
@@ -546,6 +567,77 @@ if verified_only:
 
 df = df[df["star_rating"] >= min_stars]
 
+@st.cache_resource
+def load_inference_engine():
+    from revumind.pipeline.inference import RevuMindInferenceEngine
+    return RevuMindInferenceEngine()
+
+if view_mode == "Model Playground (Test Reviews)":
+    st.markdown(
+        """
+    <div class="dash-header">
+        <div class="dash-title">⬡ Model Inference Playground</div>
+        <div class="dash-subtitle">Real-time Aspect-Based Sentiment Analysis & Helpfulness Scoring</div>
+    </div>
+    """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown('<div class="section-header">Try a New Review</div>', unsafe_allow_html=True)
+    st.write("Test the trained RevuMind NLP and Machine Learning models on custom review texts in real-time.")
+
+    col_input1, col_input2 = st.columns([3, 1])
+    with col_input1:
+        test_text = st.text_area("Review Text:", placeholder="Type or paste a product review here...", height=150)
+    with col_input2:
+        test_rating = st.slider("Star Rating:", 1, 5, 5)
+        run_analysis = st.button("Run Real-time Analysis", use_container_width=True)
+
+    if run_analysis and test_text:
+        with st.spinner("Running 7-model inference cascade..."):
+            try:
+                engine = load_inference_engine()
+                result = engine.analyze_single_review(test_text, test_rating)
+
+                if "error" in result:
+                    st.error(result["error"])
+                else:
+                    st.markdown('<div class="section-header">Analysis Results</div>', unsafe_allow_html=True)
+                    col_res1, col_res2 = st.columns(2)
+                    with col_res1:
+                        st.markdown("#### Classification Insights")
+
+                        sentiment = result["overall_sentiment"].upper()
+                        conf = result["sentiment_confidence"]
+                        sent_color = C_POS if sentiment == "POSITIVE" else C_NEG if sentiment == "NEGATIVE" else C_NEU
+
+                        st.markdown(f"**Predicted Sentiment:** <span style='color:{sent_color};font-weight:bold;'>{sentiment}</span> (Confidence: {conf})", unsafe_allow_html=True)
+                        st.metric("Predicted Helpfulness Score", f"{result['predicted_helpfulness']*100:.1f}%")
+                        st.markdown(f"**Assigned Topic:** {result['topic_name']}")
+                        st.markdown(f"**Topic Keywords:** {', '.join(result['topic_keywords'])}")
+
+                    with col_res2:
+                        st.markdown("#### Extracted Aspects & Sentiment")
+                        aspects = result["aspect_sentiments"]
+                        if aspects:
+                            aspect_df = pd.DataFrame(aspects)
+                            st.dataframe(
+                                aspect_df,
+                                column_config={
+                                    "aspect_term": st.column_config.TextColumn("Aspect/Feature"),
+                                    "sentiment_label": st.column_config.TextColumn("Sentiment"),
+                                    "confidence": st.column_config.NumberColumn("Confidence", format="%.2f")
+                                },
+                                use_container_width=True,
+                                hide_index=True
+                            )
+                        else:
+                            st.info("No specific features/aspects detected in the review text.")
+            except Exception as e:
+                st.error(f"Inference failed: {str(e)}")
+
+    st.stop()
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # HEADER
@@ -607,7 +699,7 @@ st.markdown(
 <div class="kpi-grid">
   <div class="kpi-card pos">
     <div class="kpi-label">Total Reviews</div>
-    <div class="kpi-value" style="color:{C_POS}">{total:,}</div>
+    <div class="kpi-value" style="color:{C_POS}">{st.session_state.get("db_total_reviews", total):,}</div>
     <div class="kpi-delta flat">across {df['product'].nunique()} products</div>
   </div>
   <div class="kpi-card blu">
@@ -1022,6 +1114,33 @@ selected_product = st.selectbox(
 )
 
 prod_df = df[df["product"] == selected_product]
+
+# 🤖 AI Summary block
+@st.cache_resource
+def get_summarizer():
+    from revumind.models.summarizer.model import ExecutiveSummarizer
+    return ExecutiveSummarizer(use_bart=False)
+
+st.markdown('<div class="section-header">🤖 AI Executive Summary</div>', unsafe_allow_html=True)
+summary_texts = prod_df["review_text"].dropna().tolist()
+if summary_texts:
+    @st.cache_data
+    def get_cached_summary(texts_tuple: tuple) -> str:
+        summarizer = get_summarizer()
+        return summarizer.generate_summary(list(texts_tuple))
+    
+    # Pass a representative sample of up to 30 reviews for quick summarization
+    import random
+    random.seed(42)
+    sample_size = min(len(summary_texts), 30)
+    sampled_texts = random.sample(summary_texts, sample_size)
+    
+    with st.spinner("Analyzing and summarizing product reviews..."):
+        ai_summary = get_cached_summary(tuple(sampled_texts))
+    st.info(ai_summary)
+else:
+    st.info("No reviews available for this product to summarize.")
+
 col7, col8, col9 = st.columns(3)
 
 with col7:
