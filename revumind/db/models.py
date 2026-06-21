@@ -70,7 +70,7 @@ class Review(Base):
     helpfulness_score = Column(Float, default=0.0)
     predicted_helpfulness = Column(Float, nullable=True)
 
-    review_time = Column(DateTime, nullable=True)
+    review_time = Column(DateTime, index=True, nullable=True)
     summary = Column(Text, nullable=True)
     review_text = Column(Text, nullable=True)
     clean_review_text = Column(Text, nullable=False)

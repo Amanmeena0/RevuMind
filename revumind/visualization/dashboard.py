@@ -25,6 +25,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import sqlite3
 import streamlit as st
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -462,6 +463,26 @@ def get_dashboard_data() -> pd.DataFrame:
 # SIDEBAR FILTERS
 # ══════════════════════════════════════════════════════════════════════════════
 
+@st.cache_data
+def load_summary_tables():
+    import sqlite3
+    import os
+    db_path = "revumind.db"
+    if os.path.exists(db_path):
+        conn = sqlite3.connect(db_path)
+        prod_sum_df = pd.read_sql_query("SELECT * FROM product_summary", conn)
+        monthly_sent_df = pd.read_sql_query("SELECT * FROM monthly_sentiment", conn)
+        aspect_sum_df = pd.read_sql_query("SELECT * FROM aspect_summary", conn)
+        complaint_sum_df = pd.read_sql_query("SELECT * FROM complaint_summary", conn)
+        conn.close()
+    else:
+        prod_sum_df = pd.DataFrame(columns=["product_id", "total_reviews", "average_stars", "average_helpfulness", "positive_count", "neutral_count", "negative_count"])
+        monthly_sent_df = pd.DataFrame(columns=["month", "product_id", "total_reviews", "positive_count", "neutral_count", "negative_count"])
+        aspect_sum_df = pd.DataFrame(columns=["product_id", "aspect_term", "positive_count", "neutral_count", "negative_count", "avg_confidence"])
+        complaint_sum_df = pd.DataFrame(columns=["product_id", "topic_name", "complaint_count", "severity_score"])
+    return prod_sum_df, monthly_sent_df, aspect_sum_df, complaint_sum_df
+
+
 with st.sidebar:
     st.markdown(
         """
@@ -489,30 +510,20 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    # Load pre-computed aggregates directly
-    import sqlite3
-    import os
-    from datetime import datetime
+    prod_sum_df, monthly_sent_df, aspect_sum_df, complaint_sum_df = load_summary_tables()
 
-    db_path = "revumind.db"
-    if os.path.exists(db_path):
-        conn = sqlite3.connect(db_path)
-        prod_sum_df = pd.read_sql_query("SELECT * FROM product_summary", conn)
-        monthly_sent_df = pd.read_sql_query("SELECT * FROM monthly_sentiment", conn)
-        aspect_sum_df = pd.read_sql_query("SELECT * FROM aspect_summary", conn)
-        complaint_sum_df = pd.read_sql_query("SELECT * FROM complaint_summary", conn)
-        conn.close()
+    # Sort products by total reviews descending
+    if len(prod_sum_df) > 0:
+        top_prods_df = prod_sum_df.sort_values("total_reviews", ascending=False)
+        unique_products = top_prods_df["product_id"].tolist()
     else:
-        prod_sum_df = pd.DataFrame(columns=["product_id", "total_reviews", "average_stars", "average_helpfulness", "positive_count", "neutral_count", "negative_count"])
-        monthly_sent_df = pd.DataFrame(columns=["month", "product_id", "total_reviews", "positive_count", "neutral_count", "negative_count"])
-        aspect_sum_df = pd.DataFrame(columns=["product_id", "aspect_term", "positive_count", "neutral_count", "negative_count", "avg_confidence"])
-        complaint_sum_df = pd.DataFrame(columns=["product_id", "topic_name", "complaint_count", "severity_score"])
+        unique_products = []
 
-    unique_products = sorted(prod_sum_df["product_id"].unique().tolist()) if len(prod_sum_df) else []
     selected_products = st.multiselect(
         "Products",
-        options=unique_products,
-        default=unique_products,
+        options=unique_products[:1000],  # Limit multiselect options to top 1000 popular products for performance
+        default=None,
+        placeholder="All products selected",
     )
 
     if len(monthly_sent_df) > 0:
@@ -562,16 +573,31 @@ with st.sidebar:
 # DATA FILTERING (Analytics Layer Summaries)
 # ══════════════════════════════════════════════════════════════════════════════
 
+# When no products are selected, use ALL products for KPI aggregates but
+# limit per-product charts (heatmap, bar charts) to top 50 by review count
+# to avoid sending hundreds of thousands of data points to the browser.
+MAX_CHART_PRODUCTS = 50
+
 if selected_products:
-    filtered_prod_sum = prod_sum_df[prod_sum_df["product_id"].isin(selected_products)]
-    filtered_monthly = monthly_sent_df[monthly_sent_df["product_id"].isin(selected_products)]
-    filtered_aspects = aspect_sum_df[aspect_sum_df["product_id"].isin(selected_products)]
-    filtered_complaints = complaint_sum_df[complaint_sum_df["product_id"].isin(selected_products)]
+    active_product_ids = selected_products
 else:
-    filtered_prod_sum = prod_sum_df
-    filtered_monthly = monthly_sent_df
-    filtered_aspects = aspect_sum_df
-    filtered_complaints = complaint_sum_df
+    # Use top products by review count for per-product visualizations
+    if len(prod_sum_df) > 0:
+        active_product_ids = prod_sum_df.nlargest(MAX_CHART_PRODUCTS, "total_reviews")["product_id"].tolist()
+    else:
+        active_product_ids = []
+
+# KPI cards always use full dataset for accurate totals
+filtered_prod_sum = prod_sum_df  # full for KPIs
+filtered_monthly = monthly_sent_df
+filtered_aspects = aspect_sum_df
+filtered_complaints = complaint_sum_df
+
+# Per-product chart data is limited to active_product_ids
+chart_prod_sum = prod_sum_df[prod_sum_df["product_id"].isin(active_product_ids)] if selected_products else prod_sum_df.nlargest(MAX_CHART_PRODUCTS, "total_reviews")
+chart_monthly = monthly_sent_df[monthly_sent_df["product_id"].isin(active_product_ids)]
+chart_aspects = aspect_sum_df[aspect_sum_df["product_id"].isin(active_product_ids)]
+chart_complaints = complaint_sum_df[complaint_sum_df["product_id"].isin(active_product_ids)]
 
 # Apply date range filtering to summaries
 if len(date_range) == 2 and len(filtered_monthly) > 0:
@@ -579,6 +605,9 @@ if len(date_range) == 2 and len(filtered_monthly) > 0:
     end_dt = pd.to_datetime(date_range[1])
     filtered_monthly = filtered_monthly[
         (filtered_monthly["month_dt"] >= start_dt) & (filtered_monthly["month_dt"] <= end_dt)
+    ]
+    chart_monthly = chart_monthly[
+        (chart_monthly["month_dt"] >= start_dt) & (chart_monthly["month_dt"] <= end_dt)
     ]
 
 # Dummy df skeleton to prevent unmodified visualizer script errors
@@ -884,18 +913,18 @@ st.markdown(
 col3, col4 = st.columns([2, 3])
 
 with col3:
-    # Heatmap: product × month avg rating
-    if len(filtered_monthly) > 0:
+    # Heatmap: product × month avg rating (limited to top products for performance)
+    if len(chart_monthly) > 0:
         # Calculate estimated star_rating per month per product
-        m_data = filtered_monthly.copy()
+        m_data = chart_monthly.copy()
         m_data["star_rating"] = (
             m_data["positive_count"] * 4.5
             + m_data["neutral_count"] * 3.0
             + m_data["negative_count"] * 1.5
         ) / m_data["total_reviews"].clip(lower=1)
         heatmap_data = m_data.pivot(index="product_id", columns="month", values="star_rating")
-        # Keep last 12 months
-        heatmap_data = heatmap_data.iloc[:, -12:]
+        # Keep last 12 months, top 25 products for readability
+        heatmap_data = heatmap_data.iloc[:25, -12:]
     else:
         heatmap_data = pd.DataFrame()
 
@@ -933,8 +962,8 @@ with col3:
 
 with col4:
     # Reconstruct aspect sentiments diverging bar from pre-computed summary table
-    if len(filtered_aspects) > 0:
-        aspect_group = filtered_aspects.groupby("aspect_term").agg({
+    if len(chart_aspects) > 0:
+        aspect_group = chart_aspects.groupby("aspect_term").agg({
             "positive_count": "sum",
             "neutral_count": "sum",
             "negative_count": "sum"
@@ -1015,8 +1044,8 @@ col5, col6 = st.columns([2, 3])
 
 with col5:
     # Defect rate per product — horizontal bar with colour coding
-    if len(filtered_prod_sum) > 0:
-        prod_defect = filtered_prod_sum.rename(columns={"product_id": "product"})
+    if len(chart_prod_sum) > 0:
+        prod_defect = chart_prod_sum.head(25).rename(columns={"product_id": "product"})
         prod_defect["rate"] = 0.0
         prod_defect["defects"] = 0
         prod_defect = prod_defect.sort_values("rate", ascending=True)
@@ -1066,7 +1095,8 @@ with col5:
 
 with col6:
     # Complaint severity bubble chart
-    complaints = build_complaint_scores(filtered_complaints)
+    complaints = build_complaint_scores(chart_complaints)
+    complaints = complaints.head(15)  # Limit to top 15 complaints for chart readability
     fig_bubble = px.scatter(
         complaints,
         x="count",
@@ -1109,22 +1139,127 @@ with col6:
 
 st.markdown('<div class="section-header">Product Drill-Down</div>', unsafe_allow_html=True)
 
-selected_product = st.selectbox(
-    "Select product to drill down:",
-    options=unique_products,
-    key="drill_down",
-)
+search_prod_id = st.text_input("🔍 Search specific Product ID directly:", placeholder="e.g. B007JFMH8M")
+
+if search_prod_id:
+    selected_product = search_prod_id.strip()
+else:
+    selected_product = st.selectbox(
+        "Select product to drill down (top 1000 popular shown):",
+        options=unique_products[:1000] if len(unique_products) else [],
+        key="drill_down",
+    )
 
 # 🤖 AI Summary block
 st.markdown('<div class="section-header">🤖 AI Executive Summary</div>', unsafe_allow_html=True)
+
+
+def _format_summary_text(raw_summary: str) -> list:
+    """Clean up raw extractive summary into readable bullet points."""
+    import re
+    # Remove HTML br tags
+    text = re.sub(r'<br\s*/?>', ' ', raw_summary)
+    # Clean up extra whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    # Split on pipe delimiter (from diversity-aware summarizer) or sentence boundaries
+    if ' | ' in text:
+        parts = [p.strip() for p in text.split(' | ') if p.strip()]
+    else:
+        parts = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
+
+    # Deduplicate by prefix
+    seen = set()
+    unique = []
+    for s in parts:
+        key = s.lower()[:50]
+        if key not in seen and len(s) > 15:
+            seen.add(key)
+            unique.append(s)
+    return unique[:6]  # Max 6 key points
+
+
+def _render_summary_card(product_id: str, ai_summary: str):
+    """Render a premium styled summary card with product stats and formatted text."""
+    # Get product stats
+    prod_rows = prod_sum_df[prod_sum_df["product_id"] == product_id]
+    if len(prod_rows) > 0:
+        row = prod_rows.iloc[0]
+        total = int(row["total_reviews"])
+        avg_star = float(row["average_stars"])
+        pos = int(row["positive_count"])
+        neg = int(row["negative_count"])
+        neu = int(row["neutral_count"])
+        pos_pct = pos / max(total, 1) * 100
+        neg_pct = neg / max(total, 1) * 100
+    else:
+        total, avg_star, pos_pct, neg_pct = 0, 0.0, 0.0, 0.0
+
+    # Format summary into bullet points
+    points = _format_summary_text(ai_summary)
+    bullets_html = "".join(
+        f'<div style="padding:4px 0 4px 0;border-bottom:1px solid #2A2D3A;font-size:0.82rem;color:#CCC;line-height:1.5;">'
+        f'<span style="color:#5DCAA5;margin-right:8px;">▸</span>{p}'
+        f'</div>'
+        for p in points
+    )
+
+    # Determine sentiment indicator
+    if pos_pct > 60:
+        sentiment_badge = f'<span style="background:rgba(93,202,165,0.15);color:#5DCAA5;padding:3px 10px;border-radius:12px;font-size:0.72rem;font-weight:600;">MOSTLY POSITIVE</span>'
+    elif neg_pct > 40:
+        sentiment_badge = f'<span style="background:rgba(216,90,48,0.15);color:#D85A30;padding:3px 10px;border-radius:12px;font-size:0.72rem;font-weight:600;">MOSTLY NEGATIVE</span>'
+    else:
+        sentiment_badge = f'<span style="background:rgba(239,159,39,0.15);color:#EF9F27;padding:3px 10px;border-radius:12px;font-size:0.72rem;font-weight:600;">MIXED SENTIMENT</span>'
+
+    # Strip all leading indentation to prevent markdown from rendering any inner divs as code blocks
+    card_html = f"""
+<div style="background:#1A1D27;border:1px solid #2A2D3A;border-radius:10px;padding:1.2rem 1.4rem;margin-bottom:1rem;position:relative;overflow:hidden;">
+<div style="position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg, #5DCAA5, #378ADD, #7F77DD);"></div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.8rem;">
+<div>
+<span style="font-family:'IBM Plex Mono',monospace;font-size:0.92rem;font-weight:700;color:#E8E8E8;">{product_id}</span>
+<span style="margin-left:10px;">{sentiment_badge}</span>
+</div>
+<span style="font-family:'IBM Plex Mono',monospace;font-size:0.65rem;color:#555;text-transform:uppercase;letter-spacing:0.08em;">AI-Generated Summary</span>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.6rem;margin-bottom:1rem;">
+<div style="background:#0F1117;border-radius:6px;padding:0.5rem 0.7rem;text-align:center;">
+<div style="font-family:'IBM Plex Mono',monospace;font-size:0.6rem;color:#888;text-transform:uppercase;letter-spacing:0.08em;">Reviews</div>
+<div style="font-family:'IBM Plex Mono',monospace;font-size:1.1rem;font-weight:700;color:#378ADD;">{total:,}</div>
+</div>
+<div style="background:#0F1117;border-radius:6px;padding:0.5rem 0.7rem;text-align:center;">
+<div style="font-family:'IBM Plex Mono',monospace;font-size:0.6rem;color:#888;text-transform:uppercase;letter-spacing:0.08em;">Avg Rating</div>
+<div style="font-family:'IBM Plex Mono',monospace;font-size:1.1rem;font-weight:700;color:#EF9F27;">⭐ {avg_star:.2f}</div>
+</div>
+<div style="background:#0F1117;border-radius:6px;padding:0.5rem 0.7rem;text-align:center;">
+<div style="font-family:'IBM Plex Mono',monospace;font-size:0.6rem;color:#888;text-transform:uppercase;letter-spacing:0.08em;">Positive</div>
+<div style="font-family:'IBM Plex Mono',monospace;font-size:1.1rem;font-weight:700;color:#5DCAA5;">{pos_pct:.0f}%</div>
+</div>
+<div style="background:#0F1117;border-radius:6px;padding:0.5rem 0.7rem;text-align:center;">
+<div style="font-family:'IBM Plex Mono',monospace;font-size:0.6rem;color:#888;text-transform:uppercase;letter-spacing:0.08em;">Negative</div>
+<div style="font-family:'IBM Plex Mono',monospace;font-size:1.1rem;font-weight:700;color:#D85A30;">{neg_pct:.0f}%</div>
+</div>
+</div>
+
+<div style="font-family:'IBM Plex Mono',monospace;font-size:0.65rem;color:#5DCAA5;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:0.5rem;">
+◆ Key Insights from Reviews
+</div>
+{bullets_html}
+</div>
+"""
+    st.markdown(card_html, unsafe_allow_html=True)
+
+
 if selected_product:
     conn = sqlite3.connect("revumind.db")
     summary_record = conn.execute("SELECT summary_text FROM summaries WHERE product_id = ? AND cohort_type = 'all' LIMIT 1", (selected_product,)).fetchone()
     conn.close()
 
     if summary_record:
-        ai_summary = summary_record[0]
-        st.info(ai_summary)
+        _render_summary_card(selected_product, summary_record[0])
     else:
         # Check if there are reviews to generate summary
         conn = sqlite3.connect("revumind.db")
@@ -1142,11 +1277,21 @@ if selected_product:
 
             with st.spinner("Analyzing and summarizing product reviews on-the-fly..."):
                 ai_summary = get_cached_summary(tuple(sample_texts))
-            st.info(ai_summary)
+            _render_summary_card(selected_product, ai_summary)
         else:
-            st.info("No reviews available for this product to summarize.")
+            st.markdown(
+                f'<div style="background:#1A1D27;border:1px solid #2A2D3A;border-radius:8px;padding:1rem 1.2rem;'
+                f'font-family:\'IBM Plex Mono\',monospace;font-size:0.82rem;color:#555;">'
+                f'No reviews available for <span style="color:#EF9F27;">{selected_product}</span> to summarize.</div>',
+                unsafe_allow_html=True,
+            )
 else:
-    st.info("Please select a product to display summary.")
+    st.markdown(
+        '<div style="background:#1A1D27;border:1px solid #2A2D3A;border-radius:8px;padding:1rem 1.2rem;'
+        'font-family:\'IBM Plex Mono\',monospace;font-size:0.82rem;color:#555;">'
+        'Select a product above to generate an AI executive summary.</div>',
+        unsafe_allow_html=True,
+    )
 
 col7, col8, col9 = st.columns(3)
 

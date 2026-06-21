@@ -24,14 +24,11 @@ logger = logging.getLogger(__name__)
 for pkg in ["punkt", "punkt_tab", "stopwords"]:
     nltk.download(pkg, quiet=True)
 
-# Try importing Hugging Face transformers
-try:
-    import torch
-    from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
-
-    TRANSFORMERS_AVAILABLE = True
-except ImportError:
-    TRANSFORMERS_AVAILABLE = False
+# Transformers availability check (lazy-loaded inside constructor)
+TRANSFORMERS_AVAILABLE = None
+torch = None
+AutoModelForSeq2SeqLM = None
+AutoTokenizer = None
 
 
 class ExecutiveSummarizer:
@@ -41,6 +38,18 @@ class ExecutiveSummarizer:
     """
 
     def __init__(self, model_name: str = "facebook/bart-large-cnn", use_bart: bool = True):
+        global TRANSFORMERS_AVAILABLE, torch, AutoModelForSeq2SeqLM, AutoTokenizer
+        if TRANSFORMERS_AVAILABLE is None:
+            try:
+                import torch as torch_lib
+                from transformers import AutoModelForSeq2SeqLM as AutoModel_lib, AutoTokenizer as AutoTokenizer_lib
+                torch = torch_lib
+                AutoModelForSeq2SeqLM = AutoModel_lib
+                AutoTokenizer = AutoTokenizer_lib
+                TRANSFORMERS_AVAILABLE = True
+            except ImportError:
+                TRANSFORMERS_AVAILABLE = False
+
         self.model_name = model_name
         self.use_bart = use_bart and TRANSFORMERS_AVAILABLE
 
@@ -75,57 +84,100 @@ class ExecutiveSummarizer:
         else:
             logger.info("Initializing baseline Extractive Summarizer...")
 
-    def _extractive_summarize(self, texts: List[str], num_sentences: int = 3) -> str:
+    def _extractive_summarize(self, texts: List[str], num_sentences: int = 5) -> str:
         """
-        Fallback Extractive Summarizer:
-        1. Tokenizes input text into sentences and words.
-        2. Calculates word frequencies (ignoring stopwords/punctuation).
-        3. Scores each sentence by summing word frequencies.
-        4. Selects the top-scoring sentences and returns them in order.
+        Diversity-aware Extractive Summarizer:
+        1. Processes each review independently to extract its best sentence.
+        2. Filters out anecdotal fragments and very short sentences.
+        3. Scores sentences by evaluative language and word frequencies.
+        4. Picks top diverse sentences (max one per review).
         """
-        # Combine texts into a single corpus document
-        combined_text = " ".join([t.strip() for t in texts if t.strip()])
-        if not combined_text:
+        if not texts:
             return ""
 
-        sentences = sent_tokenize(combined_text)
-        if len(sentences) <= num_sentences:
-            return combined_text
+        # Evaluative signal words that indicate product opinions
+        eval_words = {
+            "great", "excellent", "good", "best", "love", "amazing", "perfect",
+            "terrible", "worst", "awful", "bad", "poor", "horrible", "broken",
+            "recommend", "quality", "value", "price", "taste", "flavor",
+            "delicious", "fresh", "stale", "disappointed", "satisfied",
+            "worth", "cheap", "expensive", "favorite", "outstanding",
+            "product", "item", "purchase", "order", "buy", "bought",
+            "better", "worse", "compared", "alternative", "overall",
+        }
 
-        # Clean and count word frequencies
-        words = word_tokenize(combined_text.lower())
+        # Build global word frequencies across all reviews
+        all_words = []
+        for text in texts:
+            if text and text.strip():
+                all_words.extend(word_tokenize(text.lower()))
+
         word_frequencies = {}
-        for w in words:
-            if w.isalnum() and w not in self.english_stopwords:
+        for w in all_words:
+            if w.isalnum() and w not in self.english_stopwords and len(w) > 2:
                 word_frequencies[w] = word_frequencies.get(w, 0) + 1
 
         if not word_frequencies:
-            return " ".join(sentences[:num_sentences])
+            return " ".join(texts[:num_sentences])
 
-        # Normalize frequencies
         max_freq = max(word_frequencies.values())
         for w in word_frequencies:
             word_frequencies[w] = word_frequencies[w] / max_freq
 
-        # Score sentences
-        sentence_scores = {}
-        for i, sentence in enumerate(sentences):
-            sentence_words = word_tokenize(sentence.lower())
-            score = 0.0
-            for w in sentence_words:
-                if w in word_frequencies:
-                    score += word_frequencies[w]
-            sentence_scores[i] = score
+        # Score each sentence from each review independently
+        candidates = []  # (score, review_idx, sentence_text)
+        for review_idx, text in enumerate(texts):
+            if not text or not text.strip():
+                continue
+            sentences = sent_tokenize(text.strip())
+            for sentence in sentences:
+                sentence = sentence.strip()
+                # Filter: skip very short or very long sentences
+                word_count = len(sentence.split())
+                if word_count < 6 or word_count > 45:
+                    continue
 
-        # Get indices of top sentences
-        top_indices = sorted(sentence_scores, key=sentence_scores.get, reverse=True)[
-            :num_sentences
-        ]
-        # Sort indices to keep chronological reading order
-        top_indices.sort()
+                # Filter: skip sentences starting with dashes (list fragments)
+                if sentence.startswith("-") or sentence.startswith("--"):
+                    continue
 
-        summary_sentences = [sentences[idx] for idx in top_indices]
-        return " ".join(summary_sentences)
+                words = word_tokenize(sentence.lower())
+
+                # Base score from word frequencies
+                freq_score = sum(word_frequencies.get(w, 0) for w in words if w.isalnum())
+                # Normalize by length to avoid bias toward long sentences
+                freq_score = freq_score / max(len(words), 1)
+
+                # Bonus for evaluative/opinion language
+                eval_count = sum(1 for w in words if w in eval_words)
+                eval_bonus = eval_count * 0.3
+
+                # Penalty for overly personal/anecdotal sentences
+                personal_words = {"i", "my", "me", "we", "our"}
+                personal_count = sum(1 for w in words if w in personal_words)
+                personal_penalty = min(personal_count * 0.1, 0.4)
+
+                total_score = freq_score + eval_bonus - personal_penalty
+                candidates.append((total_score, review_idx, sentence))
+
+        if not candidates:
+            return " ".join(texts[:num_sentences])
+
+        # Sort by score descending
+        candidates.sort(key=lambda x: x[0], reverse=True)
+
+        # Pick top sentences ensuring diversity (max 1 per review)
+        selected = []
+        used_reviews = set()
+        for score, review_idx, sentence in candidates:
+            if review_idx in used_reviews:
+                continue
+            selected.append(sentence)
+            used_reviews.add(review_idx)
+            if len(selected) >= num_sentences:
+                break
+
+        return " | ".join(selected)
 
     def _bart_summarize(self, texts: List[str]) -> str:
         """
